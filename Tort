@@ -1,0 +1,173 @@
+-- Основа для Delta Injector (Roblox Lua)
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local Lighting = game:GetService("Lighting")
+
+local player = Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+local humanoid = character:WaitForChild("Humanoid")
+
+-- Переменные состояния
+local infJumpEnabled = false
+local speedBoostEnabled = false
+local optPhoneEnabled = false
+local menuOpen = false
+
+-- UI объекты
+local screenGui = Instance.new("ScreenGui")
+screenGui.Parent = player:WaitForChild("PlayerGui")
+
+-- Круглая кнопка (неоновая малиново-красная)
+local circleBtn = Instance.new("ImageLabel")
+circleBtn.Size = UDim2.new(0, 60, 0, 60)
+circleBtn.Position = UDim2.new(0.9, -30, 0.5, -30)
+circleBtn.BackgroundColor3 = Color3.new(0.8, 0, 0.2) -- малиново-красный
+circleBtn.BackgroundTransparency = 0.2
+circleBtn.Image = "rbxassetid://1234567890" -- круглый frame, можно использовать готовый
+circleBtn.ImageColor3 = Color3.new(0.8, 0, 0.2)
+circleBtn.ImageTransparency = 0.3
+circleBtn.Parent = screenGui
+-- неоновый эффект (теней нет, но сделаем через свечение)
+local glow = Instance.new("UIGradient")
+glow.Color = ColorSequence.new(Color3.new(1, 0, 0.4))
+glow.Rotation = 45
+glow.Parent = circleBtn
+
+-- Буква T (жирная чёрная, красивая)
+local letterT = Instance.new("TextLabel")
+letterT.Size = UDim2.new(1, 0, 1, 0)
+letterT.BackgroundTransparency = 1
+letterT.Text = "T"
+letterT.TextColor3 = Color3.new(0, 0, 0)
+letterT.TextScaled = true
+letterT.Font = Enum.Font.GothamBold
+letterT.TextStrokeColor3 = Color3.new(0.5, 0, 0.1)
+letterT.TextStrokeTransparency = 0.2
+letterT.Parent = circleBtn
+
+-- Прямоугольная менюшка (по умолчанию скрыта)
+local menuFrame = Instance.new("Frame")
+menuFrame.Size = UDim2.new(0, 250, 0, 180)
+menuFrame.Position = UDim2.new(0.5, -125, 0.5, -90)
+menuFrame.BackgroundColor3 = Color3.new(0.15, 0.05, 0.1)
+menuFrame.BackgroundTransparency = 0.1
+menuFrame.BorderSizePixel = 0
+menuFrame.Visible = false
+menuFrame.Parent = screenGui
+
+-- Заголовок
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, 0, 0, 30)
+title.BackgroundTransparency = 1
+title.Text = "BRAINROT STEAL"
+title.TextColor3 = Color3.new(0.9, 0.2, 0.3)
+title.TextScaled = true
+title.Font = Enum.Font.GothamBold
+title.Parent = menuFrame
+
+-- Функции
+local function toggleInfJump()
+    infJumpEnabled = not infJumpEnabled
+    if infJumpEnabled then
+        humanoid.JumpPower = 100
+        humanoid:GetPropertyChangedSignal("Jump"):Connect(function()
+            if humanoid.Jump and infJumpEnabled then
+                -- сбрасываем счётчик падения, чтобы не убивало
+                humanoid.Jump = true
+            end
+        end)
+        -- Защита от убийства при падении
+        humanoid.StateChanged:Connect(function(old, new)
+            if infJumpEnabled and new == Enum.HumanoidStateType.Falling then
+                humanoid.Jump = true
+            end
+        end)
+    else
+        humanoid.JumpPower = 50
+    end
+end
+
+local function toggleSpeedBoost()
+    speedBoostEnabled = not speedBoostEnabled
+    if speedBoostEnabled then
+        humanoid.WalkSpeed = 50
+    else
+        humanoid.WalkSpeed = 16
+    end
+end
+
+local function toggleOptPhone()
+    optPhoneEnabled = not optPhoneEnabled
+    if optPhoneEnabled then
+        -- картофельная графика
+        Lighting.Brightness = 0.5
+        Lighting.GlobalShadows = false
+        Lighting.FogEnd = 100
+        for _, v in pairs(workspace:GetDescendants()) do
+            if v:IsA("BasePart") then
+                v.Material = Enum.Material.Plastic
+                v.Reflectance = 0
+            end
+        end
+        -- буст производительности
+        settings().RenderQuality = Enum.RenderQuality.Automatic
+        UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+    else
+        -- возврат к норме (приблизительно)
+        Lighting.Brightness = 1
+        Lighting.GlobalShadows = true
+        Lighting.FogEnd = 1000
+        settings().RenderQuality = Enum.RenderQuality.Level01
+    end
+end
+
+-- Кнопки в меню
+local function createBtn(text, yPos, callback)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(0.8, 0, 0, 30)
+    btn.Position = UDim2.new(0.1, 0, 0, yPos)
+    btn.BackgroundColor3 = Color3.new(0.3, 0.05, 0.1)
+    btn.Text = text
+    btn.TextColor3 = Color3.new(1, 1, 1)
+    btn.TextScaled = true
+    btn.Font = Enum.Font.Gotham
+    btn.Parent = menuFrame
+    btn.MouseButton1Click:Connect(callback)
+    return btn
+end
+
+createBtn("INFJUMP", 40, toggleInfJump)
+createBtn("SPEEDBOOST", 80, toggleSpeedBoost)
+createBtn("OPTPHONE", 120, toggleOptPhone)
+
+-- Открытие/закрытие по клику на круг
+circleBtn.MouseButton1Click:Connect(function()
+    menuOpen = not menuOpen
+    menuFrame.Visible = menuOpen
+end)
+
+-- Обработка закрытия по клику вне меню (опционально)
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        if menuOpen then
+            local mousePos = UserInputService:GetMouseLocation()
+            local framePos = menuFrame.AbsolutePosition
+            local frameSize = menuFrame.AbsoluteSize
+            if not (mousePos.X >= framePos.X and mousePos.X <= framePos.X + frameSize.X and
+                    mousePos.Y >= framePos.Y and mousePos.Y <= framePos.Y + frameSize.Y) then
+                menuOpen = false
+                menuFrame.Visible = false
+            end
+        end
+    end
+end)
+
+-- Сброс при перезаходе
+player.CharacterAdded:Connect(function(newChar)
+    character = newChar
+    humanoid = character:WaitForChild("Humanoid")
+    if speedBoostEnabled then humanoid.WalkSpeed = 50 end
+    if infJumpEnabled then humanoid.JumpPower = 100 end
+end)
