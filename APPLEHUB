@@ -1,0 +1,234 @@
+-- Защита от повторного перезапуска
+if _G.BrainrotHubExecuted then 
+    print("Скрипт уже запущен!")
+    return 
+end
+_G.BrainrotHubExecuted = true
+
+-- Загрузка стабильной Kavo Library (Идеально для Delta)
+local Kavo = loadstring(game:HttpGet("https://raw.githubusercontent.com/xHeptc/Kavo-UI-Library/main/source.lua"))()
+local Window = Kavo.CreateLib("✨ Steal a Brainrot | Delta ✨", "Midnight")
+
+-- Переменные
+local Player = game.Players.LocalPlayer
+local Character = Player.Character or Player.CharacterAdded:Wait()
+local Humanoid = Character:WaitForChild("Humanoid")
+local HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
+
+local InfJumpEnabled = false
+local SpeedBoostEnabled = false
+local _G.SpeedValue = 16
+local NoclipEnabled = false
+local AutoHitEnabled = false
+local ComboHitEnabled = false
+
+-- Обновление при респавне (чтобы скрипт не ломался после смерти)
+Player.CharacterAdded:Connect(function(NewCharacter)
+    Character = NewCharacter
+    Humanoid = Character:WaitForChild("Humanoid")
+    HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
+end)
+
+---------------------------------------------------------
+-- ВКЛАДКА: ДВИЖЕНИЕ
+---------------------------------------------------------
+local TabMove = Window:NewTab("Движение")
+local SectionMove = TabMove:NewSection("Настройки скорости и прыжков")
+
+-- INF JUMP
+SectionMove:NewToggle("INF JUMP (Бесконечный прыжок)", "Прыгай сколько угодно без задержек", function(state)
+    InfJumpEnabled = state
+end)
+
+game:GetService("UserInputService").JumpRequest:Connect(function()
+    if InfJumpEnabled and Humanoid then
+        Humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+    end
+end)
+
+-- JUMP BOOST
+SectionMove:NewSlider("JUMP BOOST (Высота)", "Увеличивает силу прыжка", 250, 50, function(v)
+    Humanoid.JumpPower = v
+    Humanoid.UseJumpPower = true
+end)
+
+-- SPEED BOOST
+SectionMove:NewSlider("SPEED BOOST (Скорость)", "Игнорирует замедление от Brainrot", 150, 16, function(v)
+    _G.SpeedValue = v
+    SpeedBoostEnabled = true
+end)
+
+-- Жесткий цикл удержания скорости (Обход дебаффов режима)
+game:GetService("RunService").Heartbeat:Connect(function()
+    if SpeedBoostEnabled and Humanoid and Humanoid.Parent then
+        Humanoid.WalkSpeed = _G.SpeedValue
+    end
+end)
+
+-- NOCLIP
+SectionMove:NewToggle("NOCLIP (Сквозь стены)", "Проход через стены и хитбоксы античита", function(state)
+    NoclipEnabled = state
+end)
+
+game:GetService("RunService").Stepped:Connect(function()
+    if NoclipEnabled and Character then
+        for _, part in pairs(Character:GetDescendants()) do
+            if part:IsA("BasePart") and part.CanCollide then
+                part.CanCollide = false
+            end
+        end
+    end
+end)
+
+---------------------------------------------------------
+-- ВКЛАДКА: БОЙ
+---------------------------------------------------------
+local TabCombat = Window:NewTab("Бой")
+local SectionCombat = TabCombat:NewSection("Функции сражения")
+
+-- Функция поиска ближайшего чела
+local function getClosestPlayer(maxDistance)
+    local closest = nil
+    local shortestDistance = maxDistance or math.huge
+    for _, p in pairs(game.Players:GetPlayers()) do
+        if p ~= Player and p.Character and p.Character:FindFirstChild("HumanoidRootPart") and p.Character:FindFirstChild("Humanoid") and p.Character.Humanoid.Health > 0 then
+            local distance = (HumanoidRootPart.Position - p.Character.HumanoidRootPart.Position).Magnitude
+            if distance < shortestDistance then
+                closest = p
+                shortestDistance = distance
+            end
+        end
+    end
+    return closest
+end
+
+-- AUTO HIT
+SectionCombat:NewToggle("AUTO HIT (Авто-удар)", "Бьет всех, кто подошел близко", function(state)
+    AutoHitEnabled = state
+end)
+
+-- COMBO HIT
+SectionCombat:NewToggle("COMBO HIT (Радиус 5 блоков)", "Сильно отбрасывает врагов", function(state)
+    ComboHitEnabled = state
+end)
+
+-- Оптимизированный боевой поток
+task.spawn(function()
+    while task.wait(0.1) do
+        if AutoHitEnabled then
+            local target = getClosestPlayer(12)
+            if target then
+                local tool = Character:FindFirstChildOfClass("Tool") or Player.Backpack:FindFirstChildOfClass("Tool")
+                if tool then
+                    Humanoid:EquipTool(tool)
+                    tool:Activate()
+                end
+            end
+        end
+        
+        if ComboHitEnabled then
+            local target = getClosestPlayer(5)
+            if target and target.Character:FindFirstChild("HumanoidRootPart") then
+                local targetHRP = target.Character.HumanoidRootPart
+                local direction = (targetHRP.Position - HumanoidRootPart.Position).Unit
+                targetHRP.Velocity = direction * 140
+            end
+        end
+    end
+end)
+
+---------------------------------------------------------
+-- ВКЛАДКА: МИР И ESP
+---------------------------------------------------------
+local TabVisuals = Window:NewTab("Мир и ESP")
+local SectionVisuals = TabVisuals:NewSection("Визуалы и Магазин")
+
+-- ESP PLAYERS
+local espObjects = {}
+SectionVisuals:NewToggle("ESP PLAYERS (Синяя подсветка)", "Подсвечивает игроков синим цветом", function(state)
+    if state then
+        for _, p in pairs(game.Players:GetPlayers()) do
+            if p ~= Player and p.Character then
+                -- Синий Highlight
+                local hl = Instance.new("Highlight")
+                hl.Parent = p.Character
+                hl.FillColor = Color3.fromRGB(0, 120, 255)
+                hl.OutlineColor = Color3.fromRGB(255, 255, 255)
+                hl.FillTransparency = 0.4
+                table.insert(espObjects, hl)
+                
+                -- Текст с ником
+                local bbg = Instance.new("BillboardGui", p.Character)
+                bbg.Size = UDim2.new(0, 200, 0, 50)
+                bbg.AlwaysOnTop = true
+                bbg.StudsOffset = Vector3.new(0, 3, 0)
+                local lbl = Instance.new("TextLabel", bbg)
+                lbl.Size = UDim2.new(1, 0, 1, 0)
+                lbl.BackgroundTransparency = 1
+                lbl.Text = p.Name
+                lbl.TextColor3 = Color3.fromRGB(0, 160, 255)
+                lbl.Font = Enum.Font.SourceSansBold
+                lbl.TextSize = 16
+                table.insert(espObjects, bbg)
+            end
+        end
+    else
+        for _, obj in pairs(espObjects) do
+            if obj then obj:Destroy() end
+        end
+        table.clear(espObjects)
+    end
+end)
+
+-- OPEN THE FRIEND
+SectionVisuals:NewButton("OPEN THE FRIEND (Допуск друзей)", "Убирает коллизию дверей базы для друзей", function()
+    for _, v in pairs(workspace:GetDescendants()) do
+        if v:IsA("BasePart") and (v.Name:lower():find("gate") or v.Name:lower():find("door") or v.Name:lower():find("border")) then
+            v.CanCollide = false
+        end
+    end
+end)
+
+-- ITEMS ALL
+SectionVisuals:NewDropdown("ITEMS ALL (Купить вещь)", "Выбери предмет для покупки в магазине", {"Common Brainrot", "Super Speed Item", "Mega Safe Protection", "Lucky Box"}, function(currentOption)
+    local shopRemote = game:GetService("ReplicatedStorage"):FindFirstChild("BuyItem", true) or game:GetService("ReplicatedStorage"):FindFirstChild("ShopRemote", true)
+    if shopRemote and shopRemote:IsA("RemoteEvent") then
+        shopRemote:FireServer(currentOption)
+    end
+end)
+
+---------------------------------------------------------
+-- ВКЛАДКА: СИСТЕМА И ФПС
+---------------------------------------------------------
+local TabSys = Window:NewTab("Система")
+local SectionSys = TabSys:NewSection("Оптимизация и Ресет")
+
+-- RESET
+SectionSys:NewButton("RESET (Быстрый респавн)", "Мгновенный сброс без багов", function()
+    if Character and Humanoid then
+        Humanoid.Health = 0
+    end
+end)
+
+-- BOOST FPS (Potatoes Mode)
+SectionSys:NewButton("BOOST FPS (Режим картошки)", "Убирает все тени и текстуры, делая игру плавной", function()
+    local terrain = workspace:FindFirstChildOfClass('Terrain')
+    if terrain then
+        terrain.WaterWaveSize = 0; terrain.WaterWaveSpeed = 0; terrain.WaterReflectance = 0; terrain.WaterDetailSize = 0
+    end
+    
+    game:GetService("Lighting").GlobalShadows = false
+    game:GetService("Lighting").FogEnd = 9e9
+    settings().Rendering.QualityLevel = Enum.QualityLevel.Level01
+    
+    for _, v in pairs(game:GetDescendants()) do
+        if v:IsA("Part") or v:IsA("CornerWedgePart") or v:IsA("TrussPart") or v:IsA("WedgePart") then
+            v.Material = Enum.Material.SmoothPlastic
+            v.Reflectance = 0
+        elseif v:IsA("Decal") or v:IsA("Texture") then
+            v:Destroy()
+        elseif v:IsA("ParticleEmitter") or v:IsA("Trail") then
+            v.Enabled = false
+        end
+    end
+end)
