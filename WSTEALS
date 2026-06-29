@@ -1,0 +1,416 @@
+-- узел: meridian/roblox_delta_fixed_core
+-- deps: Delta Executor UI Engine
+-- параметры: Компактный интерфейс 5х5, Мобильная адаптация, Полная автономия
+
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local Lighting = game:GetService("Lighting")
+local Workspace = game:GetService("Workspace")
+
+local LocalPlayer = Players.LocalPlayer
+local Camera = Workspace.CurrentCamera
+
+-- Очистка старых сессий ядра
+local oldGui = LocalPlayer:WaitForChild("PlayerGui"):FindFirstChild("Morn_Terminal_Core_v2")
+if oldGui then oldGui:Destroy() end
+
+-- Инициализация GUI
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "Morn_Terminal_Core_v2"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+
+-- Компактный контейнер (Сетка 5х5 эквивалент)
+local MainFrame = Instance.new("Frame")
+MainFrame.Name = "MainFrame"
+MainFrame.Size = UDim2.new(0, 320, 0, 200)
+MainFrame.Position = UDim2.new(0.5, -160, 0.5, -100)
+MainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+MainFrame.BorderSizePixel = 1
+MainFrame.BorderColor3 = Color3.fromRGB(0, 255, 150)
+MainFrame.Active = true
+MainFrame.Parent = ScreenGui
+
+-- Скрипт перетаскивания (Фикс для Delta)
+local dragging, dragInput, dragStart, startPos
+MainFrame.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = input.Position
+        startPos = MainFrame.Position
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then dragging = false end
+        end)
+    end
+end)
+MainFrame.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+        dragInput = input
+    end
+end)
+UserInputService.InputChanged:Connect(function(input)
+    if input == dragInput and dragging then
+        local delta = input.Position - dragStart
+        MainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
+end)
+
+-- Заголовок
+local Title = Instance.new("TextLabel")
+Title.Size = UDim2.new(1, -30, 0, 25)
+Title.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+Title.Text = " MORN // V2"
+Title.TextColor3 = Color3.fromRGB(0, 255, 150)
+Title.Font = Enum.Font.Code
+Title.TextSize = 12
+Title.TextXAlignment = Enum.TextXAlignment.Left
+Title.Parent = MainFrame
+
+-- Кнопка закрытия [X]
+local CloseButton = Instance.new("TextButton")
+CloseButton.Size = UDim2.new(0, 25, 0, 25)
+CloseButton.Position = UDim2.new(1, -25, 0, 0)
+CloseButton.BackgroundColor3 = Color3.fromRGB(40, 10, 10)
+CloseButton.Text = "X"
+CloseButton.TextColor3 = Color3.fromRGB(255, 50, 50)
+CloseButton.Font = Enum.Font.Code
+CloseButton.TextSize = 12
+CloseButton.Parent = MainFrame
+
+CloseButton.Activated:Connect(function()
+    ScreenGui:Destroy()
+end)
+
+-- Навигация (Вкладки)
+local NavFrame = Instance.new("Frame")
+NavFrame.Position = UDim2.new(0, 5, 0, 30)
+NavFrame.Size = UDim2.new(0, 80, 1, -35)
+NavFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+NavFrame.Parent = MainFrame
+
+local UIList = Instance.new("UIListLayout")
+UIList.Padding = UDim.new(0, 3)
+UIList.Parent = NavFrame
+
+-- Контейнер страниц
+local ContentFrame = Instance.new("Frame")
+ContentFrame.Position = UDim2.new(0, 90, 0, 30)
+ContentFrame.Size = UDim2.new(1, -95, 1, -35)
+ContentFrame.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
+ContentFrame.Parent = MainFrame
+
+local Pages = {}
+local function CreatePage(name)
+    local Page = Instance.new("ScrollingFrame")
+    Page.Size = UDim2.new(1, 0, 1, 0)
+    Page.BackgroundTransparency = 1
+    Page.Visible = false
+    Page.CanvasSize = UDim2.new(0, 0, 1.5, 0)
+    Page.ScrollBarThickness = 2
+    
+    local List = Instance.new("UIListLayout")
+    List.Padding = UDim.new(0, 4)
+    List.Parent = Page
+    
+    Page.Parent = ContentFrame
+    Pages[name] = Page
+    return Page
+end
+
+local MainPage = CreatePage("Main")
+local ESPPage = CreatePage("ESP")
+local OptPage = CreatePage("Optimization")
+MainPage.Visible = true
+
+-- Переключатель вкладок (Фикс через Activated)
+local function AddTab(name, targetPage)
+    local Button = Instance.new("TextButton")
+    Button.Size = UDim2.new(1, 0, 0, 25)
+    Button.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    Button.Text = name
+    Button.TextColor3 = Color3.fromRGB(255, 255, 255)
+    Button.Font = Enum.Font.Code
+    Button.TextSize = 10
+    Button.Parent = NavFrame
+    
+    Button.Activated:Connect(function()
+        for _, p in pairs(Pages) do p.Visible = false end
+        targetPage.Visible = true
+    end)
+end
+
+AddTab("MAIN", MainPage)
+AddTab("ESP", ESPPage)
+AddTab("OPT", OptPage)
+
+-- Универсальный конструктор интерактивных кнопок
+local function CreateButton(text, parent, callback)
+    local Button = Instance.new("TextButton")
+    Button.Size = UDim2.new(1, -6, 0, 28)
+    Button.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+    Button.Text = text
+    Button.TextColor3 = Color3.fromRGB(255, 255, 255)
+    Button.Font = Enum.Font.Code
+    Button.TextSize = 11
+    Button.BorderSizePixel = 1
+    Button.BorderColor3 = Color3.fromRGB(0, 255, 150)
+    Button.Parent = parent
+    
+    Button.Activated:Connect(function()
+        callback(Button)
+    end)
+    return Button
+end
+
+---------------------------------------------------------
+-- ИСПОЛНИТЕЛЬНЫЕ СИСТЕМЫ СТАНЦИИ
+---------------------------------------------------------
+
+-- 1. INFJUMP
+local infJumpEnabled = false
+CreateButton("INFJUMP: OFF", MainPage, function(btn)
+    infJumpEnabled = not infJumpEnabled
+    btn.Text = "INFJUMP: " .. (infJumpEnabled and "ON" or "OFF")
+end)
+
+UserInputService.JumpRequest:Connect(function()
+    if infJumpEnabled and LocalPlayer.Character then
+        local humanoid = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+        if humanoid then
+            humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+        end
+    end
+end)
+
+-- 2. JUMPBOOST
+local jumpBoostEnabled = false
+CreateButton("JUMPBOOST: OFF", MainPage, function(btn)
+    jumpBoostEnabled = not jumpBoostEnabled
+    btn.Text = "JUMPBOOST: " .. (jumpBoostEnabled and "ON" or "OFF")
+    
+    local humanoid = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+    if humanoid then
+        humanoid.JumpPower = jumpBoostEnabled and 110 or 50
+        humanoid.UseJumpPower = true
+    end
+end)
+
+-- 3. TPBASE (На точку сбора / Collect Zone)
+CreateButton("TP TO COLLECT", MainPage, function()
+    local bases = Workspace:FindFirstChild("Bases") or Workspace:FindFirstChild("Tycoons") or Workspace
+    local targetZone = nil
+    
+    for _, base in pairs(bases:GetChildren()) do
+        if string.find(string.lower(base.Name), string.lower(LocalPlayer.Name)) or (base:FindFirstChild("Owner") and base.Owner.Value == LocalPlayer) then
+            targetZone = base:FindFirstChild("Collect Zone") or base:FindFirstChild("CollectZone") or base:FindFirstChild("Collector") or base:FindFirstChild("Drop") or base:FindFirstChild("Delivery")
+            break
+        end
+    end
+    
+    if targetZone and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+        LocalPlayer.Character.HumanoidRootPart.CFrame = targetZone.CFrame + Vector3.new(0, 3, 0)
+    end
+end)
+
+-- 4. FLY SYSTEM (Без багов и ТП)
+local flying = false
+local flySpeed = 50
+local bVel, bGyro
+
+CreateButton("FLY: OFF", MainPage, function(btn)
+    flying = not flying
+    btn.Text = "FLY: " .. (flying and "ON" or "OFF")
+    
+    local char = LocalPlayer.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    
+    if flying and hrp then
+        bVel = Instance.new("BodyVelocity")
+        bVel.MaxForce = Vector3.new(4e4, 4e4, 4e4)
+        bVel.Velocity = Vector3.new(0, 0, 0)
+        bVel.Parent = hrp
+        
+        bGyro = Instance.new("BodyGyro")
+        bGyro.MaxTorque = Vector3.new(4e4, 4e4, 4e4)
+        bGyro.CFrame = hrp.CFrame
+        bGyro.Parent = hrp
+        
+        local humanoid = char:FindFirstChildOfClass("Humanoid")
+        if humanoid then humanoid.PlatformStand = true end
+    else
+        if bVel then bVel:Destroy() end
+        if bGyro then bGyro:Destroy() end
+        local humanoid = char and char:FindFirstChildOfClass("Humanoid")
+        if humanoid then humanoid.PlatformStand = false end
+    end
+end)
+
+RunService.RenderStepped:Connect(function()
+    if flying and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+        local hrp = LocalPlayer.Character.HumanoidRootPart
+        local moveDir = Vector3.new(0, 0, 0)
+        
+        -- Логика направления камеры эмулятора
+        if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveDir = moveDir + Camera.CFrame.LookVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.S) then moveDir = moveDir - Camera.CFrame.LookVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.A) then moveDir = moveDir - Camera.CFrame.RightVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveDir = moveDir + Camera.CFrame.RightVector end
+        
+        -- Поддержка интерфейса тачпада для мобильных (Delta)
+        if UserInputService.TouchEnabled and moveDir.Magnitude == 0 then
+            local movePart = LocalPlayer.Character:FindFirstChild("Humanoid") and LocalPlayer.Character.Humanoid.MoveDirection
+            if movePart and movePart.Magnitude > 0 then
+                moveDir = movePart
+            end
+        end
+        
+        if bVel and bGyro then
+            bVel.Velocity = moveDir.Unit * flySpeed
+            if moveDir.Magnitude == 0 then bVel.Velocity = Vector3.new(0, 0, 0) end
+            bGyro.CFrame = Camera.CFrame
+        end
+    end
+end)
+
+-- 5. ESP PLAYERS
+local espPlayersEnabled = false
+local function applyPlayerESP(player)
+    if player == LocalPlayer then return end
+    local function addBox(char)
+        if not espPlayersEnabled then return end
+        local rpart = char:WaitForChild("HumanoidRootPart", 5)
+        if rpart and not rpart:FindFirstChild("Morn_ESP") then
+            local box = Instance.new("BoxHandleAdornment")
+            box.Name = "Morn_ESP"
+            box.Size = Vector3.new(4, 6, 4)
+            box.Color3 = Color3.fromRGB(0, 255, 150)
+            box.AlwaysOnTop = true
+            box.Adornee = rpart
+            box.Transparency = 0.6
+            box.Parent = rpart
+        end
+    end
+    if player.Character then addBox(player.Character) end
+    player.CharacterAdded:Connect(addBox)
+end
+
+CreateButton("ESP PLAYERS: OFF", ESPPage, function(btn)
+    espPlayersEnabled = not espPlayersEnabled
+    btn.Text = "ESP PLAYERS: " .. (espPlayersEnabled and "ON" or "OFF")
+    if espPlayersEnabled then
+        for _, p in pairs(Players:GetPlayers()) do applyPlayerESP(p) end
+    else
+        for _, p in pairs(Players:GetPlayers()) do
+            if p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+                local e = p.Character.HumanoidRootPart:FindFirstChild("Morn_ESP")
+                if e then e:Destroy() end
+            end
+        end
+    end
+end)
+
+-- 6. ESP LOCK
+local espLockEnabled = false
+local lockLabels = {}
+
+RunService.Heartbeat:Connect(function()
+    if not espLockEnabled then return end
+    local bases = Workspace:FindFirstChild("Bases") or Workspace:FindFirstChild("Tycoons")
+    if bases then
+        for _, base in pairs(bases:GetChildren()) do
+            local gate = base:FindFirstChild("Gate") or base:FindFirstChild("Door")
+            local timerText = base:FindFirstChild("Timer") or base:FindFirstChild("Time")
+            if gate and not gate:FindFirstChild("Morn_LockESP") then
+                local bgui = Instance.new("BillboardGui")
+                bgui.Name = "Morn_LockESP"
+                bgui.AlwaysOnTop = true
+                bgui.Size = UDim2.new(0, 80, 0, 20)
+                local lbl = Instance.new("TextLabel")
+                lbl.Size = UDim2.new(1, 0, 1, 0)
+                lbl.BackgroundTransparency = 1
+                lbl.TextColor3 = Color3.fromRGB(255, 50, 50)
+                lbl.Font = Enum.Font.Code
+                lbl.TextSize = 10
+                lbl.Parent = bgui
+                bgui.Parent = gate
+                table.insert(lockLabels, bgui)
+            end
+            if gate and gate:FindFirstChild("Morn_LockESP") then
+                local currentText = "0"
+                if timerText then currentText = timerText:IsA("TextLabel") and timerText.Text or tostring(timerText.Value) end
+                gate.Morn_LockESP.TextLabel.Text = "Lock: " .. currentText
+            end
+        end
+    end
+end)
+
+CreateButton("ESP LOCK: OFF", ESPPage, function(btn)
+    espLockEnabled = not espLockEnabled
+    btn.Text = "ESP LOCK: " .. (espLockEnabled and "ON" or "OFF")
+    if not espLockEnabled then
+        for _, v in pairs(lockLabels) do if v then v:Destroy() end end
+        lockLabels = {}
+    end
+end)
+
+-- 7. ESP BRAINROT
+local espBrainrotEnabled = false
+local brainrotLabels = {}
+
+RunService.Heartbeat:Connect(function()
+    if not espBrainrotEnabled then return end
+    local bases = Workspace:FindFirstChild("Bases") or Workspace:FindFirstChild("Tycoons")
+    if bases then
+        for _, base in pairs(bases:GetChildren()) do
+            local rotFolder = base:FindFirstChild("Brainrots") or base:FindFirstChild("DroppedItems") or base
+            for _, rot in pairs(rotFolder:GetChildren()) do
+                if rot:IsA("Model") or rot:IsA("Part") then
+                    if string.find(string.lower(rot.Name), "rot") or string.find(string.lower(rot.Name), "brain") then
+                        local mainPart = rot:IsA("Model") and (rot.PrimaryPart or rot:FindFirstChildOfClass("Part")) or rot
+                        if mainPart and not mainPart:FindFirstChild("Morn_RotESP") then
+                            local bgui = Instance.new("BillboardGui")
+                            bgui.Name = "Morn_RotESP"
+                            bgui.AlwaysOnTop = true
+                            bgui.Size = UDim2.new(0, 100, 0, 20)
+                            local lbl = Instance.new("TextLabel")
+                            lbl.Size = UDim2.new(1, 0, 1, 0)
+                            lbl.BackgroundTransparency = 1
+                            lbl.TextColor3 = Color3.fromRGB(200, 255, 0)
+                            lbl.Font = Enum.Font.Code
+                            lbl.TextSize = 9
+                            lbl.Parent = bgui
+                            bgui.Parent = mainPart
+                            table.insert(brainrotLabels, bgui)
+                        end
+                        if mainPart and mainPart:FindFirstChild("Morn_RotESP") then
+                            local val = rot:FindFirstChild("Value") or rot:FindFirstChild("Income")
+                            mainPart.Morn_RotESP.TextLabel.Text = rot.Name .. " [$" .. (val and tostring(val.Value) or "10") .. "/s]"
+                        end
+                    end
+                end
+            end
+        end
+    end
+end)
+
+CreateButton("ESP BRAINROT: OFF", ESPPage, function(btn)
+    espBrainrotEnabled = not espBrainrotEnabled
+    btn.Text = "ESP BRAINROT: " .. (espBrainrotEnabled and "ON" or "OFF")
+    if not espBrainrotEnabled then
+        for _, v in pairs(brainrotLabels) do if v then v:Destroy() end end
+        brainrotLabels = {}
+    end
+end)
+
+-- 8. OPTIMIZATION
+CreateButton("OPTIMIZE RUN", OptPage, function()
+    Lighting.GlobalShadows = false
+    for _, v in pairs(Lighting:GetEffects()) do v:Destroy() end
+    for _, desc in pairs(Workspace:GetDescendants()) do
+        if desc:IsA("ParticleEmitter") or desc:IsA("Trail") or desc:IsA("Beam") or desc:IsA("Smoke") or desc:IsA("Sparkles") then
+            desc:Destroy()
+        end
+    end
+end)
