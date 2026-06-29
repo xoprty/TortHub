@@ -1,0 +1,244 @@
+-- узел: meridian/roblox_delta_blox_strike
+-- deps: Delta Executor Environment (Lua uup)
+-- параметры: UI_TITLE ("#1bigernscript"), Скрипт автоматизации боевых систем
+
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local CoreGui = game:GetService("CoreGui")
+
+-- Настройки состояний
+local Config = {
+    Wallhack = false,
+    Autoaim = false,
+    NoRange = false
+}
+
+-- Создание UI в защищенном контейнере
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "Meridian_Core_UI"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+ScreenGui.Parent = CoreGui
+
+-- Круглая кнопка меню
+local OpenButton = Instance.new("TextButton")
+local UICorner_Open = Instance.new("UICorner")
+OpenButton.Name = "OpenButton"
+OpenButton.Size = UDim2.new(0, 60, 0, 60)
+OpenButton.Position = UDim2.new(0, 20, 0.5, -30)
+OpenButton.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+OpenButton.Text = "M"
+OpenButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+OpenButton.Font = Enum.Font.SourceSansBold
+OpenButton.TextSize = 24
+OpenButton.Active = true
+OpenButton.Draggable = true
+OpenButton.Parent = ScreenGui
+
+UICorner_Open.CornerRadius = UDim.new(1, 0)
+UICorner_Open.Parent = OpenButton
+
+-- Прямоугольное главное меню
+local MainMenu = Instance.new("Frame")
+local UICorner_Main = Instance.new("UICorner")
+local TitleLabel = Instance.new("TextLabel")
+local UIListLayout = Instance.new("UIListLayout")
+
+MainMenu.Name = "MainMenu"
+MainMenu.Size = UDim2.new(0, 250, 0, 300)
+MainMenu.Position = UDim2.new(0.5, -125, 0.5, -150)
+MainMenu.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+MainMenu.BorderSizePixel = 0
+MainMenu.Visible = false
+MainMenu.Active = true
+MainMenu.Draggable = true
+MainMenu.Parent = ScreenGui
+
+UICorner_Main.CornerRadius = UDim.new(0, 8)
+UICorner_Main.Parent = MainMenu
+
+TitleLabel.Name = "TitleLabel"
+TitleLabel.Size = UDim2.new(1, 0, 0, 40)
+TitleLabel.BackgroundColor3 = Color3.fromRGB(240, 240, 240)
+TitleLabel.Text = "#1bigernscript"
+TitleLabel.TextColor3 = Color3.fromRGB(0, 0, 0)
+TitleLabel.Font = Enum.Font.SourceSansBold
+TitleLabel.TextSize = 22
+TitleLabel.Parent = MainMenu
+
+local Container = Instance.new("Frame")
+Container.Name = "Container"
+Container.Size = UDim2.new(1, 0, 1, -40)
+Container.Position = UDim2.new(0, 0, 0, 40)
+Container.BackgroundTransparency = 1
+Container.Parent = MainMenu
+
+UIListLayout.Parent = Container
+UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+UIListLayout.Padding = UDim.new(0, 10)
+UIListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+
+-- Функция переключения меню
+OpenButton.MouseButton1Click:Connect(function()
+    MainMenu.Visible = not MainMenu.Visible
+end)
+
+-- Конструктор кнопок функций
+local function CreateToggle(name, text, callback)
+    local Button = Instance.new("TextButton")
+    local UICorner_Btn = Instance.new("UICorner")
+    
+    Button.Name = name
+    Button.Size = UDim2.new(0, 220, 0, 45)
+    Button.BackgroundColor3 = Color3.fromRGB(230, 230, 230)
+    Button.Text = text .. ": OFF"
+    Button.TextColor3 = Color3.fromRGB(0, 0, 0)
+    Button.Font = Enum.Font.SourceSansBold
+    Button.TextSize = 18
+    Button.Parent = Container
+    
+    UICorner_Btn.CornerRadius = UDim.new(0, 6)
+    UICorner_Btn.Parent = Button
+    
+    local state = false
+    Button.MouseButton1Click:Connect(function()
+        state = not state
+        if state then
+            Button.BackgroundColor3 = Color3.fromRGB(180, 255, 180)
+            Button.Text = text .. ": ON"
+        else
+            Button.BackgroundColor3 = Color3.fromRGB(230, 230, 230)
+            Button.Text = text .. ": OFF"
+        end
+        callback(state)
+    end)
+end
+
+-- Вспомогательная функция проверки видимости цели (Raycast)
+local function IsVisible(targetPart)
+    local character = LocalPlayer.Character
+    if not character then return false end
+    
+    local raycastParams = RaycastParams.new()
+    raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+    raycastParams.FilterDescendantsInstances = {character, targetPart.Parent}
+    raycastParams.IgnoreWater = true
+    
+    local rayDirection = targetPart.Position - Camera.CFrame.Position
+    local raycastResult = workspace:Raycast(Camera.CFrame.Position, rayDirection, raycastParams)
+    
+    return raycastResult == nil
+end
+
+-- Логика Wallhack (ESP)
+local espObjects = {}
+
+local function ApplyWallhack(state)
+    Config.Wallhack = state
+    if not state then
+        for player, highlight in pairs(espObjects) do
+            if highlight then highlight:Destroy() end
+        end
+        table.clear(espObjects)
+        return
+    end
+end
+
+RunService.RenderStepped:Connect(function()
+    if Config.Wallhack then
+        for _, player in ipairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+                local char = player.Character
+                if not espObjects[player] or not espObjects[player].Parent then
+                    local highlight = Instance.new("Highlight")
+                    highlight.Name = "ESP_Highlight"
+                    highlight.FillColor = Color3.fromRGB(255, 0, 0)
+                    highlight.FillTransparency = 0.5
+                    highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+                    highlight.OutlineTransparency = 0
+                    highlight.Adornee = char
+                    highlight.Parent = ScreenGui
+                    espObjects[player] = highlight
+                end
+            end
+        end
+    else
+        if next(espObjects) ~= nil then
+            for player, highlight in pairs(espObjects) do
+                if highlight then highlight:Destroy() end
+            end
+            table.clear(espObjects)
+        end
+    end
+end)
+
+-- Логика Autoaim
+local function GetClosestVisiblePlayer()
+    local closestPlayer = nil
+    local shortestDistance = math.huge
+    
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("Head") and player.Character:FindFirstChildOfClass("Humanoid") and player.Character:FindFirstChildOfClass("Humanoid").Health > 0 then
+            local head = player.Character.Head
+            if IsVisible(head) then
+                local screenPos, onScreen = Camera:WorldToViewportPoint(head.Position)
+                if onScreen then
+                    local mousePos = UserInputService:GetMouseLocation()
+                    local distance = (Vector2.new(screenPos.X, screenPos.Y) - mousePos).Magnitude
+                    if distance < shortestDistance then
+                        closestPlayer = player
+                        shortestDistance = distance
+                    end
+                end
+            end
+        end
+    end
+    return closestPlayer
+end
+
+RunService.RenderStepped:Connect(function()
+    if Config.Autoaim then
+        local target = GetClosestVisiblePlayer()
+        if target and target.Character and target.Character:FindFirstChild("Head") then
+            local targetHead = target.Character.Head
+            Camera.CFrame = CFrame.new(Camera.CFrame.Position, targetHead.Position)
+        end
+    end
+end)
+
+-- Логика NoRange (No Spread / No Recoil)
+-- Примечание: Blox Strike использует кастомные модули оружия в структурах репликации
+local function ApplyNoRange(state)
+    Config.NoRange = state
+    
+    task.spawn(function()
+        while Config.NoRange do
+            -- Сканирование памяти окружения на наличие конфигураций оружия
+            for _, v in ipairs(game:GetDescendants()) do
+                if v:IsA("ModuleScript") and (v.Name:lower():find("weapon") or v.Name:lower():find("gun")) then
+                    pcall(function()
+                        local mod = require(v)
+                        if type(mod) == "table" then
+                            -- Стандартные ключи разброса для шутеров на Roblox
+                            if mod.Spread then mod.Spread = 0 end
+                            if mod.MinSpread then mod.MinSpread = 0 end
+                            if mod.MaxSpread then mod.MaxSpread = 0 end
+                            if mod.SpreadIncrement then mod.SpreadIncrement = 0 end
+                            if mod.Recoil then mod.Recoil = 0 end
+                        end
+                    end)
+                end
+            end
+            task.wait(5) -- Циклический опрос изменений структуры при смене оружия
+        end
+    end)
+end
+
+-- Инициализация кнопок интерфейса
+CreateToggle("Btn_WH", "Wallhack", function(state) ApplyWallhack(state) end)
+CreateToggle("Btn_AA", "Autoaim", function(state) Config.Autoaim = state end)
+CreateToggle("Btn_NR", "NoRange", function(state) ApplyNoRange(state) end)
