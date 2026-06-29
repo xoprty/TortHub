@@ -1,0 +1,106 @@
+local UserInputService = game:GetService("UserInputService")
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local LocalPlayer = Players.LocalPlayer
+
+-- UI Основа
+local ScreenGui = Instance.new("ScreenGui", game:GetService("CoreGui"))
+ScreenGui.Name = "DeltaBrainrotMenu"
+
+local MainFrame = Instance.new("Frame", ScreenGui)
+MainFrame.Size = UDim2.new(0, 220, 0, 400)
+MainFrame.Position = UDim2.new(0.5, -110, 0.5, -200)
+MainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+MainFrame.Active = true
+MainFrame.Draggable = true
+
+local Title = Instance.new("TextLabel", MainFrame)
+Title.Size = UDim2.new(1, 0, 0, 40)
+Title.Text = "Brainrot Hub"
+Title.TextColor3 = Color3.new(1, 1, 1)
+Title.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+Title.Font = Enum.Font.GothamBold
+
+local CloseBtn = Instance.new("TextButton", Title)
+CloseBtn.Size = UDim2.new(0, 40, 0, 40)
+CloseBtn.Text = "X"
+CloseBtn.BackgroundColor3 = Color3.fromRGB(200, 0, 0)
+CloseBtn.MouseButton1Click:Connect(function()
+    MainFrame.Visible = false
+    ToggleButton.Visible = true
+end)
+
+local ToggleButton = Instance.new("ImageButton", ScreenGui)
+ToggleButton.Size = UDim2.new(0, 50, 0, 50)
+ToggleButton.Position = UDim2.new(0.05, 0, 0.05, 0)
+ToggleButton.BackgroundColor3 = Color3.fromRGB(50, 50, 255)
+ToggleButton.Visible = false
+ToggleButton.Active = true
+ToggleButton.Draggable = true
+ToggleButton.MouseButton1Click:Connect(function()
+    MainFrame.Visible = true
+    ToggleButton.Visible = false
+end)
+
+local Container = Instance.new("ScrollingFrame", MainFrame)
+Container.Size = UDim2.new(1, 0, 1, -40)
+Container.Position = UDim2.new(0, 0, 0, 40)
+Container.BackgroundTransparency = 1
+
+local UIListLayout = Instance.new("UIListLayout", Container)
+UIListLayout.Padding = UDim.new(0, 5)
+UIListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+
+local function createBtn(text, callback)
+    local btn = Instance.new("TextButton", Container)
+    btn.Size = UDim2.new(0, 200, 0, 35)
+    btn.Text = text
+    btn.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+    btn.TextColor3 = Color3.new(1, 1, 1)
+    btn.MouseButton1Click:Connect(callback)
+    return btn
+end
+
+-- ЛОГИКА
+local infJump = false
+UserInputService.JumpRequest:Connect(function()
+    if infJump then LocalPlayer.Character.Humanoid:ChangeState("Jumping") end
+end)
+
+createBtn("Toggle INFJUMP", function(btn)
+    infJump = not infJump
+    btn.Text = "INFJUMP: " .. (infJump and "ON" or "OFF")
+end)
+
+createBtn("JUMPBOOST", function()
+    LocalPlayer.Character.Humanoid.JumpPower = 150
+end)
+
+createBtn("SPEED HACK", function()
+    LocalPlayer.Character.Humanoid.WalkSpeed = 50
+end)
+
+createBtn("ESP (Players)", function()
+    for _, p in pairs(Players:GetPlayers()) do
+        if p.Character then Instance.new("Highlight", p.Character) end
+    end
+end)
+
+createBtn("ANTI-AFK", function()
+    local VirtualUser = game:GetService("VirtualUser")
+    LocalPlayer.Idled:Connect(function()
+        VirtualUser:Button2Down(Vector2.new(0,0), workspace.CurrentCamera.CFrame)
+        wait(1)
+        VirtualUser:Button2Up(Vector2.new(0,0), workspace.CurrentCamera.CFrame)
+    end)
+end)
+
+createBtn("TP to Brainrot", function()
+    -- Пример: ищет объект в рабочей области
+    local target = workspace:FindFirstChild("Brainrot") or workspace:FindFirstChild("Drop")
+    if target then
+        LocalPlayer.Character:MoveTo(target.Position)
+    end
+end)
+
+print("Brainrot Hub Loaded Successfully!")
