@@ -1,0 +1,471 @@
+-- узел: meridian/roblox_utility_hub_v2
+-- deps: Delta Executor Environment (Roblox Client)
+-- параметры: UI_FONT (Arcade), UI_COLOR_PRIMARY (малиновый), ESP_CONTROLLER
+
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
+local Players = game:GetService("Players")
+local Lighting = game:GetService("Lighting")
+local Workspace = game:GetService("Workspace")
+
+local LocalPlayer = Players.LocalPlayer
+local Mouse = LocalPlayer:GetMouse()
+local Camera = Workspace.CurrentCamera
+
+-- Инициализация контейнера UI
+local ScreenGui = Instance.new("ScreenGui")
+pcall(function() ScreenGui.Parent = game:GetService("CoreGui") end)
+if not ScreenGui.Parent then ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
+ScreenGui.Name = "PetyaHub_v2"
+ScreenGui.ResetOnSpawn = false
+
+-- Глобальная матрица состояний
+local States = {
+    InfJump = false,
+    SpeedBoost = false,
+    SpeedValue = 16,
+    JumpBoost = false,
+    JumpValue = 50,
+    AutoWeb = false,
+    Optimization = false,
+    EspPlayers = false,
+    EspLock = false,
+    EspBrainrot = false
+}
+
+local OriginalMaterials = {}
+local ESP_Storage = {}
+
+--------------------------------------------------------------------------------
+-- ВСПОМОГАТЕЛЬНЫЕ СИСТЕМНЫЕ ФУНКЦИИ
+--------------------------------------------------------------------------------
+
+-- Безопасный обход античита прыжков через импульс физики
+local LastJump = 0
+UserInputService.JumpRequest:Connect(function()
+    if States.InfJump and tick() - LastJump > 0.15 then
+        local Character = LocalPlayer.Character
+        local Root = Character and Character:FindFirstChild("HumanoidRootPart")
+        local Humanoid = Character and Character:FindFirstChildOfClass("Humanoid")
+        
+        if Root and Humanoid then
+            LastJump = tick()
+            -- Вместо смены стейта — силовой толчок вверх, обходящий счетчик стейтов гуманоида
+            Root.Velocity = Vector3.new(Root.Velocity.X, States.JumpBoost and States.JumpValue or 50, Root.Velocity.Z)
+        end
+    end
+end)
+
+-- Контур контроля SpeedBoost и стандартного JumpBoost
+RunService.PostSimulation:Connect(function()
+    local Character = LocalPlayer.Character
+    if Character then
+        local Humanoid = Character:FindFirstChildOfClass("Humanoid")
+        if Humanoid then
+            if States.SpeedBoost then
+                Humanoid.WalkSpeed = States.SpeedValue
+            end
+            if States.JumpBoost and not States.InfJump then
+                Humanoid.JumpPower = States.JumpValue
+                Humanoid.UseJumpPower = true
+            elseif not States.JumpBoost and not States.InfJump then
+                Humanoid.JumpPower = 50
+            end
+        end
+    end
+end)
+
+-- Контур AUTOWEB (Auto Aim для Web Slinger)
+local function GetClosestPlayerToCursor()
+    local Target = nil
+    local MinDistance = math.huge
+    
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+            local Root = player.Character.HumanoidRootPart
+            local ScreenPos, OnScreen = Camera:WorldToScreenPoint(Root.Position)
+            
+            if OnScreen then
+                local MousePos = UserInputService:GetMouseLocation()
+                local Distance = (Vector2.new(ScreenPos.X, ScreenPos.Y) - MousePos).Magnitude
+                if Distance < MinDistance and Distance < 300 then -- Радиус захвата 300 пикселей
+                    MinDistance = Distance
+                    Target = Root
+                end
+            end
+        end
+    end
+    return Target
+end
+
+-- Перехват активации Web Slinger
+local AimConnection
+RunService.RenderStepped:Connect(function()
+    if States.AutoWeb then
+        local Character = LocalPlayer.Character
+        -- Проверка наличия Web Slinger в руках
+        if Character and Character:FindFirstChild("Web Slinger") or Character:FindFirstChild("WebSlinger") then
+            local Target = GetClosestPlayerToCursor()
+            if Target and UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then
+                -- Направление камеры на цель дляDelta/инжектор совместимости
+                Camera.CFrame = CFrame.new(Camera.CFrame.Position, Target.Position)
+            end
+        end
+    end
+end)
+
+--------------------------------------------------------------------------------
+-- МОДУЛЬ ESP УЗЛОВ
+--------------------------------------------------------------------------------
+
+local function CreateESP(object, text, color, stateKey)
+    if ESP_Storage[object] then return end
+    
+    local Box = Instance.new("Highlight")
+    Box.Adornee = object
+    Box.FillColor = color
+    Box.FillTransparency = 0.6
+    Box.OutlineColor = Color3.fromRGB(255, 255, 255)
+    Box.OutlineTransparency = 0.2
+    Box.Parent = ScreenGui
+    
+    local Billboard = Instance.new("BillboardGui")
+    Billboard.Adornee = object
+    Billboard.Size = UDim2.new(0, 200, 0, 50)
+    Billboard.AlwaysOnTop = true
+    Billboard.StudsOffset = Vector3.new(0, 3, 0)
+    
+    local Label = Instance.new("TextLabel")
+    Label.Size = UDim2.new(1, 0, 1, 0)
+    Label.BackgroundTransparency = 1
+    Label.Text = text
+    Label.TextColor3 = color
+    Label.Font = Enum.Font.Arcade
+    Label.TextSize = 14
+    Label.Parent = Billboard
+    Billboard.Parent = ScreenGui
+    
+    ESP_Storage[object] = {Box, Billboard}
+    
+    task.spawn(function()
+        while object and object.Parent and States[stateKey] do task.wait(0.5) end
+        Box:Destroy()
+        Billboard:Destroy()
+        ESP_Storage[object] = nil
+    end)
+end
+
+-- Поток обновления ESP
+task.spawn(function()
+    while true do
+        task.wait(1)
+        if States.EspPlayers then
+            for _, p in ipairs(Players:GetPlayers()) do
+                if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+                    CreateESP(p.Character.HumanoidRootPart, p.Name, Color3.fromRGB(0, 255, 255), "EspPlayers")
+                end
+            end
+        end
+        -- Скан специфичных объектов Steal a brainrot в Workspace
+        if States.EspLock or States.EspBrainrot then
+            for _, obj in ipairs(Workspace:GetDescendants()) do
+                if States.EspLock and (obj.Name:lower():find("base") or obj.Name:lower():find("lock")) and obj:IsA("BasePart") then
+                    CreateESP(obj, "[BASE/LOCK]", Color3.fromRGB(255, 170, 0), "EspLock")
+                end
+                if States.EspBrainrot and obj.Name:lower():find("brainrot") and obj:IsA("BasePart") then
+                    -- В симуляции берется узел с максимальным масштабом/стоимостью
+                    CreateESP(obj, "[TOP BRAINROT]", Color3.fromRGB(255, 0, 127), "EspBrainrot")
+                end
+            end
+        end
+    end
+end)
+
+--------------------------------------------------------------------------------
+-- ГРАФИЧЕСКИЙ ИНТЕРФЕЙС ТЕРМИНАЛА (PIXEL STYLE)
+--------------------------------------------------------------------------------
+
+-- Кнопка-триггер
+local ToggleButton = Instance.new("TextButton")
+local ButtonCorner = Instance.new("UICorner")
+local ButtonStroke = Instance.new("UIStroke")
+
+ToggleButton.Name = "TriggerButton"
+ToggleButton.Parent = ScreenGui
+ToggleButton.Size = UDim2.new(0, 50, 0, 50)
+ToggleButton.Position = UDim2.new(0, 20, 0.5, -25)
+ToggleButton.BackgroundColor3 = Color3.fromRGB(255, 0, 127)
+ToggleButton.Text = "P"
+ToggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+ToggleButton.Font = Enum.Font.Arcade
+ToggleButton.TextSize = 24
+ToggleButton.Active = true
+ToggleButton.Draggable = true
+ButtonCorner.CornerRadius = UDim.new(1, 0)
+ButtonCorner.Parent = ToggleButton
+ButtonStroke.Thickness = 2
+ButtonStroke.Color = Color3.fromRGB(255, 100, 200)
+ButtonStroke.Parent = ToggleButton
+
+-- Главное меню
+local MainMenu = Instance.new("Frame")
+local MenuCorner = Instance.new("UICorner")
+local MenuStroke = Instance.new("UIStroke")
+local HeaderText = Instance.new("TextLabel")
+local Container = Instance.new("ScrollingFrame")
+local UIListLayout = Instance.new("UIListLayout")
+
+MainMenu.Name = "MainMenu"
+MainMenu.Parent = ScreenGui
+MainMenu.Size = UDim2.new(0, 280, 0, 380)
+MainMenu.Position = UDim2.new(0.5, -140, 0.5, -190)
+MainMenu.BackgroundColor3 = Color3.fromRGB(25, 10, 35)
+MainMenu.Visible = false
+MainMenu.Active = true
+MainMenu.Draggable = true
+
+MenuCorner.CornerRadius = UDim.new(0, 0) -- Пиксельный стиль требует острых или простых углов
+MenuCorner.Parent = MainMenu
+MenuStroke.Thickness = 2
+MenuStroke.Color = Color3.fromRGB(255, 0, 127)
+MenuStroke.Parent = MainMenu
+
+HeaderText.Name = "Header"
+HeaderText.Parent = MainMenu
+HeaderText.Size = UDim2.new(1, 0, 0, 35)
+HeaderText.BackgroundColor3 = Color3.fromRGB(40, 15, 55)
+HeaderText.Text = "@petyahub"
+HeaderText.TextColor3 = Color3.fromRGB(255, 0, 127)
+HeaderText.Font = Enum.Font.Arcade
+HeaderText.TextSize = 18
+
+Container.Name = "Container"
+Container.Parent = MainMenu
+Container.Position = UDim2.new(0, 10, 0, 45)
+Container.Size = UDim2.new(1, -20, 1, -55)
+Container.BackgroundTransparency = 1
+Container.ScrollBarThickness = 4
+Container.CanvasSize = UDim2.new(0, 0, 0, 0)
+Container.AutomaticCanvasSize = Enum.AutomaticSize.Y
+
+UIListLayout.Parent = Container
+UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+UIListLayout.Padding = UDim.new(0, 8)
+
+-- Дополнительное подменю ESP
+local EspMenu = Instance.new("Frame")
+local EspLayout = Instance.new("UIListLayout")
+local EspStroke = Instance.new("UIStroke")
+local EspHeader = Instance.new("TextLabel")
+
+EspMenu.Name = "EspMenu"
+EspMenu.Parent = ScreenGui
+EspMenu.Size = UDim2.new(0, 200, 0, 180)
+EspMenu.Position = UDim2.new(0.5, 150, 0.5, -90)
+EspMenu.BackgroundColor3 = Color3.fromRGB(20, 8, 30)
+EspMenu.Visible = false
+EspMenu.Active = true
+EspMenu.Draggable = true
+
+EspStroke.Thickness = 2
+EspStroke.Color = Color3.fromRGB(0, 255, 255)
+EspStroke.Parent = EspMenu
+
+EspHeader.Size = UDim2.new(1, 0, 0, 30)
+EspHeader.BackgroundColor3 = Color3.fromRGB(30, 10, 45)
+EspHeader.Text = "ESP SUB-SYSTEM"
+EspHeader.TextColor3 = Color3.fromRGB(0, 255, 255)
+EspHeader.Font = Enum.Font.Arcade
+EspHeader.TextSize = 14
+EspHeader.Parent = EspMenu
+
+EspLayout.Parent = EspMenu
+EspLayout.SortOrder = Enum.SortOrder.LayoutOrder
+EspLayout.Padding = UDim.new(0, 5)
+
+--------------------------------------------------------------------------------
+-- СБОРЩИК ЭЛЕМЕНТОВ УПРАВЛЕНИЯ С ТРАССИРОВКОЙ НАЖАТИЙ
+--------------------------------------------------------------------------------
+
+local function CreateToggleButton(name, layoutOrder, parentContainer, callback)
+    local Frame = Instance.new("Frame")
+    local TextLabel = Instance.new("TextLabel")
+    local Button = Instance.new("TextButton")
+    
+    Frame.Size = UDim2.new(1, 0, 0, 35)
+    Frame.BackgroundTransparency = 1
+    Frame.LayoutOrder = layoutOrder
+    Frame.Parent = parentContainer
+    
+    TextLabel.Size = UDim2.new(0.65, 0, 1, 0)
+    TextLabel.BackgroundTransparency = 1
+    TextLabel.Text = " " .. name
+    TextLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    TextLabel.Font = Enum.Font.Arcade
+    TextLabel.TextSize = 14
+    TextLabel.TextXAlignment = Enum.TextXAlignment.Left
+    TextLabel.Parent = Frame
+    
+    Button.Size = UDim2.new(0.3, 0, 0.8, 0)
+    Button.Position = UDim2.new(0.7, 0, 0.1, 0)
+    Button.BackgroundColor3 = Color3.fromRGB(45, 15, 50)
+    Button.Text = "[OFF]"
+    Button.TextColor3 = Color3.fromRGB(150, 150, 150)
+    Button.Font = Enum.Font.Arcade
+    Button.TextSize = 12
+    Button.Parent = Frame
+    
+    local enabled = false
+    Button.MouseButton1Click:Connect(function()
+        enabled = not enabled
+        if enabled then
+            Button.TextColor3 = Color3.fromRGB(255, 0, 127)
+            Button.Text = "[ON]"
+        else
+            Button.TextColor3 = Color3.fromRGB(150, 150, 150)
+            Button.Text = "[OFF]"
+        end
+        callback(enabled)
+    end)
+end
+
+local function CreateSlider(name, layoutOrder, parentContainer, min, max, callback)
+    local Frame = Instance.new("Frame")
+    local TextLabel = Instance.new("TextLabel")
+    local SliderBG = Instance.new("Frame")
+    local SliderFill = Instance.new("Frame")
+    local ValueLabel = Instance.new("TextLabel")
+    
+    Frame.Size = UDim2.new(1, 0, 0, 45)
+    Frame.BackgroundTransparency = 1
+    Frame.LayoutOrder = layoutOrder
+    Frame.Parent = parentContainer
+    
+    TextLabel.Size = UDim2.new(0.6, 0, 0, 20)
+    TextLabel.BackgroundTransparency = 1
+    TextLabel.Text = " " .. name
+    TextLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+    TextLabel.Font = Enum.Font.Arcade
+    TextLabel.TextSize = 12
+    TextLabel.TextXAlignment = Enum.TextXAlignment.Left
+    TextLabel.Parent = Frame
+    
+    ValueLabel.Size = UDim2.new(0.4, 0, 0, 20)
+    ValueLabel.Position = UDim2.new(0.6, 0, 0, 0)
+    ValueLabel.BackgroundTransparency = 1
+    ValueLabel.Text = tostring(min)
+    ValueLabel.TextColor3 = Color3.fromRGB(255, 0, 127)
+    ValueLabel.Font = Enum.Font.Arcade
+    ValueLabel.TextSize = 12
+    ValueLabel.TextXAlignment = Enum.TextXAlignment.Right
+    ValueLabel.Parent = Frame
+
+    SliderBG.Size = UDim2.new(1, -10, 0, 6)
+    SliderBG.Position = UDim2.new(0, 5, 0, 25)
+    SliderBG.BackgroundColor3 = Color3.fromRGB(40, 15, 55)
+    SliderBG.Parent = Frame
+    
+    SliderFill.Size = UDim2.new(0, 0, 1, 0)
+    SliderFill.BackgroundColor3 = Color3.fromRGB(255, 0, 127)
+    SliderFill.Parent = SliderBG
+    
+    local IsSliding = false
+    
+    local function TrackInboundMouse()
+        local LocationX = UserInputService:GetMouseLocation().X
+        local RelativeX = LocationX - SliderBG.AbsolutePosition.X
+        local Percentage = math.clamp(RelativeX / SliderBG.AbsoluteSize.X, 0, 1)
+        
+        SliderFill.Size = UDim2.new(Percentage, 0, 1, 0)
+        local CurrentVal = math.floor(min + (max - min) * Percentage)
+        ValueLabel.Text = tostring(CurrentVal)
+        callback(CurrentVal)
+    end
+    
+    SliderBG.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            IsSliding = true
+            TrackInboundMouse()
+        end
+    end)
+    
+    UserInputService.InputChanged:Connect(function(input)
+        if IsSliding and input.UserInputType == Enum.UserInputType.MouseMovement then
+            TrackInboundMouse()
+        end
+    end)
+    
+    UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            IsSliding = false
+        end
+    end)
+end
+
+-- Оптимизация мира (Картофельный режим)
+local function OptimizeWorld(enable)
+    if enable then
+        for _, obj in ipairs(workspace:GetDescendants()) do
+            if obj:IsA("BasePart") and not obj:IsA("MeshPart") then
+                if not OriginalMaterials[obj] then OriginalMaterials[obj] = obj.Material end
+                obj.Material = Enum.Material.SmoothPlastic
+            elseif obj:IsA("Texture") or obj:IsA("Decal") then
+                if not OriginalMaterials[obj] then OriginalMaterials[obj] = obj.Transparency end
+                obj.Transparency = 1
+            end
+        end
+        Lighting.GlobalShadows = false
+    else
+        for obj, mat in pairs(OriginalMaterials) do
+            if obj and obj.Parent then
+                if obj:IsA("BasePart") then obj.Material = mat else obj.Transparency = mat end
+            end
+        end
+        table.clear(OriginalMaterials)
+        Lighting.GlobalShadows = true
+    end
+end
+
+--------------------------------------------------------------------------------
+-- СБОРКА И КОМПИЛЯЦИЯ ИНТЕРФЕЙСА
+--------------------------------------------------------------------------------
+
+ToggleButton.MouseButton1Click:Connect(function()
+    local toggle = not MainMenu.Visible
+    MainMenu.Visible = toggle
+    if not toggle then EspMenu.Visible = false end
+end)
+
+-- Наполнение главного меню
+CreateToggleButton("INFJUMP", 1, Container, function(s) States.InfJump = s end)
+CreateToggleButton("SPEEDBOOST", 2, Container, function(s) States.SpeedBoost = s end)
+CreateSlider("SPEED VALUE", 3, Container, 16, 150, function(v) States.SpeedValue = v end)
+CreateToggleButton("JUMPBOOST", 4, Container, function(s) States.JumpBoost = s end)
+CreateSlider("JUMP VALUE", 5, Container, 50, 100, function(v) States.JumpValue = v end)
+CreateToggleButton("AUTOWEB", 6, Container, function(s) States.AutoWeb = s end)
+CreateToggleButton("OPTIMIZATION", 7, Container, OptimizeWorld)
+
+-- Кнопка развертывания подменю ESP
+local EspSectionButton = Instance.new("TextButton")
+EspSectionButton.Size = UDim2.new(1, 0, 0, 35)
+EspSectionButton.BackgroundColor3 = Color3.fromRGB(30, 45, 60)
+EspSectionButton.Text = "-> OPEN ESP SECTION"
+EspSectionButton.TextColor3 = Color3.fromRGB(0, 255, 255)
+EspSectionButton.Font = Enum.Font.Arcade
+EspSectionButton.TextSize = 14
+EspSectionButton.LayoutOrder = 8
+EspSectionButton.Parent = Container
+
+EspSectionButton.MouseButton1Click:Connect(function()
+    EspMenu.Visible = not EspMenu.Visible
+end)
+
+-- Наполнение меню ESP
+CreateToggleButton("ESP PLAYERS", 1, EspMenu, function(s) States.EspPlayers = s end)
+CreateToggleButton("ESP LOCK", 2, EspMenu, function(s) States.EspLock = s end)
+CreateToggleButton("ESP BRAINROT", 3, EspMenu, function(s) States.EspBrainrot = s end)
+
+LocalPlayer.CharacterAdded:Connect(function()
+    if States.Optimization then task.wait(1) OptimizeWorld(true) end
+end)
