@@ -1,0 +1,345 @@
+-- узел: meridian/roblox_utility_hub
+-- deps: Delta Executor Environment (Roblox Client)
+-- параметры: UI_COLOR_PRIMARY (малиновый), UI_COLOR_SECONDARY (темно-фиолетовый)
+
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local HttpService = game:GetService("HttpService")
+local RunService = game:GetService("RunService")
+local Players = game:GetService("Players")
+local Lighting = game:GetService("Lighting")
+
+local LocalPlayer = Players.LocalPlayer
+
+-- Создание корневого контейнера в защищенном хранилище
+local ScreenGui = Instance.new("ScreenGui")
+pcall(function()
+    ScreenGui.Parent = game:GetService("CoreGui")
+end)
+if not ScreenGui.Parent then ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
+ScreenGui.Name = "PetyaHub_Container"
+ScreenGui.ResetOnSpawn = false
+
+-- Флаги состояний систем
+local States = {
+    InfJump = false,
+    SpeedBoost = false,
+    Optimization = false,
+    SpeedValue = 16
+}
+
+-- Хранилище оригинальных текстур для отката оптимизации
+local OriginalMaterials = {}
+
+--------------------------------------------------------------------------------
+-- МОДУЛЬ ИНТЕРФЕЙСА (UI)
+--------------------------------------------------------------------------------
+
+-- Круглая кнопка-триггер (Малиновый неон)
+local ToggleButton = Instance.new("TextButton")
+local ButtonCorner = Instance.new("UICorner")
+local ButtonStroke = Instance.new("UIStroke")
+
+ToggleButton.Name = "TriggerButton"
+ToggleButton.Parent = ScreenGui
+ToggleButton.Size = UDim2.new(0, 60, 0, 60)
+ToggleButton.Position = UDim2.new(0, 20, 0.5, -30)
+ToggleButton.BackgroundColor3 = Color3.fromRGB(255, 0, 127)
+ToggleButton.Text = "P"
+ToggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+ToggleButton.Font = Enum.Font.GothamBold
+ToggleButton.TextSize = 28
+ToggleButton.Active = true
+ToggleButton.Draggable = true
+
+ButtonCorner.CornerRadius = UDim.new(1, 0)
+ButtonCorner.Parent = ToggleButton
+
+ButtonStroke.Thickness = 2
+ButtonStroke.Color = Color3.fromRGB(255, 100, 200)
+ButtonStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+ButtonStroke.Parent = ToggleButton
+
+-- Главное окно (Темно-фиолетовый / Малиновый)
+local MainMenu = Instance.new("Frame")
+local MenuCorner = Instance.new("UICorner")
+local MenuStroke = Instance.new("UIStroke")
+local HeaderText = Instance.new("TextLabel")
+local Container = Instance.new("ScrollingFrame")
+local UIListLayout = Instance.new("UIListLayout")
+
+MainMenu.Name = "MainMenu"
+MainMenu.Parent = ScreenGui
+MainMenu.Size = UDim2.new(0, 280, 0, 350)
+MainMenu.Position = UDim2.new(0.5, -140, 0.5, -175)
+MainMenu.BackgroundColor3 = Color3.fromRGB(25, 10, 35)
+MainMenu.Visible = false
+MainMenu.Active = true
+MainMenu.Draggable = true
+
+MenuCorner.CornerRadius = UDim.new(0, 12)
+MenuCorner.Parent = MainMenu
+
+MenuStroke.Thickness = 2
+MenuStroke.Color = Color3.fromRGB(255, 0, 127)
+MenuStroke.Parent = MainMenu
+
+-- Шапка @petyahub
+HeaderText.Name = "Header"
+HeaderText.Parent = MainMenu
+HeaderText.Size = UDim2.new(1, 0, 0, 40)
+HeaderText.BackgroundColor3 = Color3.fromRGB(40, 15, 55)
+HeaderText.Text = "@petyahub"
+HeaderText.TextColor3 = Color3.fromRGB(255, 0, 127)
+HeaderText.Font = Enum.Font.GothamBold
+HeaderText.TextSize = 18
+
+local HeaderCorner = Instance.new("UICorner")
+HeaderCorner.CornerRadius = UDim.new(0, 12)
+HeaderCorner.Parent = HeaderText
+
+-- Контейнер функций
+Container.Name = "Container"
+Container.Parent = MainMenu
+Container.Position = UDim2.new(0, 10, 0, 50)
+Container.Size = UDim2.new(1, -20, 1, -60)
+Container.BackgroundTransparency = 1
+Container.ScrollBarThickness = 4
+Container.CanvasSize = UDim2.new(0, 0, 0, 0)
+Container.AutomaticCanvasSize = Enum.AutomaticSize.Y
+
+UIListLayout.Parent = Container
+UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+UIListLayout.Padding = UDim.new(0, 10)
+
+--------------------------------------------------------------------------------
+-- КОНСТРУКТОРЫ ЭЛЕМЕНТОВ УПРАВЛЕНИЯ
+--------------------------------------------------------------------------------
+
+local function CreateToggleButton(name, layoutOrder, callback)
+    local Frame = Instance.new("Frame")
+    local TextLabel = Instance.new("TextLabel")
+    local Button = Instance.new("TextButton")
+    local BCorner = Instance.new("UICorner")
+    
+    Frame.Size = UDim2.new(1, 0, 0, 45)
+    Frame.BackgroundTransparency = 1
+    Frame.LayoutOrder = layoutOrder
+    Frame.Parent = Container
+    
+    TextLabel.Size = UDim2.new(0.7, 0, 1, 0)
+    TextLabel.BackgroundTransparency = 1
+    TextLabel.Text = name
+    TextLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    TextLabel.Font = Enum.Font.GothamMedium
+    TextLabel.TextSize = 14
+    TextLabel.TextXAlignment = Enum.TextXAlignment.Left
+    TextLabel.Parent = Frame
+    
+    Button.Size = UDim2.new(0.25, 0, 0.7, 0)
+    Button.Position = UDim2.new(0.75, 0, 0.15, 0)
+    Button.BackgroundColor3 = Color3.fromRGB(50, 20, 70)
+    Button.Text = "OFF"
+    Button.TextColor3 = Color3.fromRGB(150, 150, 150)
+    Button.Font = Enum.Font.GothamBold
+    Button.TextSize = 12
+    Button.Parent = Frame
+    
+    BCorner.CornerRadius = UDim.new(0, 6)
+    BCorner.Parent = Button
+    
+    local enabled = false
+    Button.MouseButton1Click:Connect(function()
+        enabled = not enabled
+        if enabled then
+            Button.BackgroundColor3 = Color3.fromRGB(255, 0, 127)
+            Button.TextColor3 = Color3.fromRGB(255, 255, 255)
+            Button.Text = "ON"
+        else
+            Button.BackgroundColor3 = Color3.fromRGB(50, 20, 70)
+            Button.TextColor3 = Color3.fromRGB(150, 150, 150)
+            Button.Text = "OFF"
+        end
+        callback(enabled)
+    end)
+end
+
+local function CreateSlider(name, layoutOrder, min, max, callback)
+    local Frame = Instance.new("Frame")
+    local TextLabel = Instance.new("TextLabel")
+    local SliderBG = Instance.new("Frame")
+    local SliderFill = Instance.new("Frame")
+    local ValueLabel = Instance.new("TextLabel")
+    
+    Frame.Size = UDim2.new(1, 0, 0, 55)
+    Frame.BackgroundTransparency = 1
+    Frame.LayoutOrder = layoutOrder
+    Frame.Parent = Container
+    
+    TextLabel.Size = UDim2.new(0.7, 0, 0, 20)
+    TextLabel.BackgroundTransparency = 1
+    TextLabel.Text = name
+    TextLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+    TextLabel.Font = Enum.Font.GothamMedium
+    TextLabel.TextSize = 12
+    TextLabel.TextXAlignment = Enum.TextXAlignment.Left
+    TextLabel.Parent = Frame
+    
+    ValueLabel.Size = UDim2.new(0.3, 0, 0, 20)
+    ValueLabel.Position = UDim2.new(0.7, 0, 0, 20)
+    ValueLabel.BackgroundTransparency = 1
+    ValueLabel.Text = tostring(min)
+    ValueLabel.TextColor3 = Color3.fromRGB(255, 0, 127)
+    ValueLabel.Font = Enum.Font.GothamBold
+    ValueLabel.TextSize = 12
+    ValueLabel.TextXAlignment = Enum.TextXAlignment.Right
+    ValueLabel.Parent = Frame
+
+    SliderBG.Size = UDim2.new(1, 0, 0, 8)
+    SliderBG.Position = UDim2.new(0, 0, 0, 30)
+    SliderBG.BackgroundColor3 = Color3.fromRGB(40, 15, 55)
+    SliderBG.Parent = Frame
+    Instance.new("UICorner", SliderBG).CornerRadius = UDim.new(1, 0)
+    
+    SliderFill.Size = UDim2.new(0, 0, 1, 0)
+    SliderFill.BackgroundColor3 = Color3.fromRGB(255, 0, 127)
+    SliderFill.Parent = SliderBG
+    Instance.new("UICorner", SliderFill).CornerRadius = UDim.new(1, 0)
+    
+    local mouse = LocalPlayer:GetMouse()
+    local down = false
+    
+    local function update()
+        local pos = math.clamp((mouse.X - SliderBG.AbsolutePosition.X) / SliderBG.AbsoluteSize.X, 0, 1)
+        SliderFill.Size = UDim2.new(pos, 0, 1, 0)
+        local value = math.floor(min + (max - min) * pos)
+        ValueLabel.Text = tostring(value)
+        callback(value)
+    end
+    
+    SliderBG.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            down = true
+            update()
+        end
+    end)
+    
+    UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            down = false
+        end
+    end)
+    
+    UserInputService.InputChanged:Connect(function(input)
+        if down and input.UserInputType == Enum.UserInputType.MouseMovement then
+            update()
+        end
+    end)
+end
+
+--------------------------------------------------------------------------------
+-- ЛОГИКА ФУНКЦИОНАЛА СТАНЦИИ
+--------------------------------------------------------------------------------
+
+-- Бесконечный прыжок без детекта счетчика циклов
+UserInputService.JumpRequest:Connect(function()
+    if States.InfJump then
+        local Character = LocalPlayer.Character
+        if Character then
+            local Humanoid = Character:FindFirstChildOfClass("Humanoid")
+            if Humanoid then
+                Humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+            end
+        end
+    end
+end)
+
+-- Буст скорости с обходом перезаписи со стороны StateMachine
+RunService.RenderStepped:Connect(function()
+    local Character = LocalPlayer.Character
+    if Character then
+        local Humanoid = Character:FindFirstChildOfClass("Humanoid")
+        if Humanoid then
+            if States.SpeedBoost then
+                Humanoid.WalkSpeed = States.SpeedValue
+            end
+        end
+    end
+end)
+
+-- Изоляция текстур для Potato Graphics
+local function OptimizeWorld(enable)
+    if enable then
+        for _, obj in ipairs(workspace:GetDescendants()) do
+            if obj:IsA("DataModelMesh") or obj:IsA("CharacterMesh") or obj:IsA("BasePart") then
+                if obj:IsA("BasePart") and not obj:IsA("MeshPart") then
+                    if not OriginalMaterials[obj] then
+                        OriginalMaterials[obj] = obj.Material
+                    end
+                    obj.Material = Enum.Material.SmoothPlastic
+                end
+                if obj:IsA("Texture") or obj:IsA("Decal") then
+                    if not OriginalMaterials[obj] then
+                        OriginalMaterials[obj] = obj.Transparency
+                    end
+                    obj.Transparency = 1
+                end
+            end
+        end
+        -- Снижение глобальных параметров рендеринга среды
+        Lighting.GlobalShadows = false
+        Lighting.FogEnd = 9e9
+    else
+        for obj, material in pairs(OriginalMaterials) do
+            if obj and obj.Parent then
+                if obj:IsA("BasePart") then
+                    obj.Material = material
+                elseif obj:IsA("Texture") or obj:IsA("Decal") then
+                    obj.Transparency = material
+                end
+            end
+        end
+        table.clear(OriginalMaterials)
+        Lighting.GlobalShadows = true
+    end
+end
+
+--------------------------------------------------------------------------------
+-- ИНИЦИАЛИЗАЦИЯ И СБОРКА КОНТУРОВ
+--------------------------------------------------------------------------------
+
+-- Кнопка переключения меню
+ToggleButton.MouseButton1Click:Connect(function()
+    MainMenu.Visible = not MainMenu.Visible
+end)
+
+-- Сборка функционала в контейнере
+CreateToggleButton("INFJUMP", 1, function(state)
+    States.InfJump = state
+end)
+
+CreateToggleButton("SPEEDBOOST", 2, function(state)
+    States.SpeedBoost = state
+    if not state then
+        pcall(function()
+            LocalPlayer.Character:FindFirstChildOfClass("Humanoid").WalkSpeed = 16
+        end)
+    end
+end)
+
+CreateSlider("SPEED VALUE", 3, 16, 150, function(value)
+    States.SpeedValue = value
+end)
+
+CreateToggleButton("OPTIMIZATION", 4, function(state)
+    States.Optimization = state
+    OptimizeWorld(state)
+end)
+
+-- Отслеживание спавна для переназначения функций оптимизации
+LocalPlayer.CharacterAdded:Connect(function()
+    if States.Optimization then
+        task.wait(1)
+        OptimizeWorld(true)
+    end
+end)
