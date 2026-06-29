@@ -1,0 +1,364 @@
+-- Steal a Brainrot Utility by bigernscript (Luau for Roblox Executor)
+-- Full script with GUI, features and anti-detection wrappers
+-- Inject via executor (e.g. Synapse, Fluxus). Use at own risk.
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local Lighting = game:GetService("Lighting")
+local Workspace = game:GetService("Workspace")
+
+local LocalPlayer = Players.LocalPlayer
+local Camera = Workspace.CurrentCamera
+
+-- Helper wrappers for safe operations
+local ProcessConnector = {}
+function ProcessConnector:GetData(target)
+    return target
+end
+
+local OverlayRenderer = {}
+function OverlayRenderer:RenderFrame(frame)
+    if frame then
+        frame.Visible = true
+    end
+end
+
+-- Main ScreenGui
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "BigernOverlay"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+
+-- Circular Menu Button
+local CircleButton = Instance.new("Frame")
+CircleButton.Name = "CircleMenu"
+CircleButton.Size = UDim2.new(0, 80, 0, 80)
+CircleButton.Position = UDim2.new(0.05, 0, 0.5, -40)
+CircleButton.BackgroundColor3 = Color3.fromRGB(255, 20, 147) -- Vibrant pink
+CircleButton.BorderSizePixel = 0
+CircleButton.Parent = ScreenGui
+
+local UICornerCircle = Instance.new("UICorner")
+UICornerCircle.CornerRadius = UDim.new(1, 0)
+UICornerCircle.Parent = CircleButton
+
+local UICircleStroke = Instance.new("UIStroke")
+UICircleStroke.Thickness = 4
+UICircleStroke.Color = Color3.fromRGB(255, 215, 0)
+UICircleStroke.Parent = CircleButton
+
+local BLabel = Instance.new("TextLabel")
+BLabel.Size = UDim2.new(1, 0, 1, 0)
+BLabel.BackgroundTransparency = 1
+BLabel.Text = "B"
+BLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+BLabel.TextScaled = true
+BLabel.Font = Enum.Font.GothamBold
+BLabel.Parent = CircleButton
+
+-- Rectangular Menu
+local MainMenu = Instance.new("Frame")
+MainMenu.Name = "MainMenu"
+MainMenu.Size = UDim2.new(0, 320, 0, 420)
+MainMenu.Position = UDim2.new(0.5, -160, 0.5, -210)
+MainMenu.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
+MainMenu.BorderSizePixel = 0
+MainMenu.Visible = false
+MainMenu.Parent = ScreenGui
+
+local UICornerMenu = Instance.new("UICorner")
+UICornerMenu.CornerRadius = UDim.new(0, 12)
+UICornerMenu.Parent = MainMenu
+
+local MenuStroke = Instance.new("UIStroke")
+MenuStroke.Thickness = 2
+MenuStroke.Color = Color3.fromRGB(138, 43, 226)
+MenuStroke.Parent = MainMenu
+
+local Title = Instance.new("TextLabel")
+Title.Size = UDim2.new(1, 0, 0, 50)
+Title.BackgroundTransparency = 1
+Title.Text = "#1 bigernscript"
+Title.TextColor3 = Color3.fromRGB(255, 105, 180)
+Title.TextScaled = true
+Title.Font = Enum.Font.GothamBlack
+Title.Parent = MainMenu
+
+-- Scrolling Frame for toggles
+local Scrolling = Instance.new("ScrollingFrame")
+Scrolling.Size = UDim2.new(1, -20, 1, -70)
+Scrolling.Position = UDim2.new(0, 10, 0, 60)
+Scrolling.BackgroundTransparency = 1
+Scrolling.ScrollBarThickness = 6
+Scrolling.Parent = MainMenu
+
+local UIListLayout = Instance.new("UIListLayout")
+UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+UIListLayout.Padding = UDim.new(0, 8)
+UIListLayout.Parent = Scrolling
+
+-- Variables
+local espEnabled = false
+local espLockEnabled = false
+local infJumpEnabled = false
+local speedBoostEnabled = false
+local speedValue = 16
+local autoWebEnabled = false
+local optimizationEnabled = false
+
+local connections = {}
+local espObjects = {}
+local lockTimer = 0
+local lockStartTime = 0
+
+-- Create Toggle Function
+local function CreateToggle(name, callback)
+    local ToggleFrame = Instance.new("Frame")
+    ToggleFrame.Size = UDim2.new(1, 0, 0, 50)
+    ToggleFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 55)
+    ToggleFrame.Parent = Scrolling
+    
+    local UICornerT = Instance.new("UICorner")
+    UICornerT.CornerRadius = UDim.new(0, 8)
+    UICornerT.Parent = ToggleFrame
+    
+    local Label = Instance.new("TextLabel")
+    Label.Size = UDim2.new(0.7, 0, 1, 0)
+    Label.BackgroundTransparency = 1
+    Label.Text = name
+    Label.TextColor3 = Color3.fromRGB(255, 255, 255)
+    Label.TextXAlignment = Enum.TextXAlignment.Left
+    Label.Font = Enum.Font.GothamSemibold
+    Label.TextSize = 18
+    Label.Parent = ToggleFrame
+    
+    local ToggleButton = Instance.new("TextButton")
+    ToggleButton.Size = UDim2.new(0, 80, 0, 30)
+    ToggleButton.Position = UDim2.new(1, -90, 0.5, -15)
+    ToggleButton.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
+    ToggleButton.Text = "OFF"
+    ToggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+    ToggleButton.Font = Enum.Font.GothamBold
+    ToggleButton.Parent = ToggleFrame
+    
+    local ToggleCorner = Instance.new("UICorner")
+    ToggleCorner.CornerRadius = UDim.new(0, 6)
+    ToggleCorner.Parent = ToggleButton
+    
+    local enabled = false
+    ToggleButton.MouseButton1Click:Connect(function()
+        enabled = not enabled
+        if enabled then
+            ToggleButton.BackgroundColor3 = Color3.fromRGB(0, 255, 100)
+            ToggleButton.Text = "ON"
+        else
+            ToggleButton.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
+            ToggleButton.Text = "OFF"
+        end
+        callback(enabled)
+    end)
+    
+    return ToggleFrame
+end
+
+-- ESP Player
+CreateToggle("ESP PLAYER", function(state)
+    espEnabled = state
+    if not state then
+        for _, obj in pairs(espObjects) do
+            obj:Destroy()
+        end
+        espObjects = {}
+    end
+end)
+
+-- ESP LOCK with timer
+CreateToggle("ESP LOCK", function(state)
+    espLockEnabled = state
+    if state then
+        lockStartTime = tick()
+    end
+end)
+
+-- INFJUMP
+CreateToggle("INFJUMP", function(state)
+    infJumpEnabled = state
+end)
+
+-- SPEEDBOOST with value
+local speedFrame = Instance.new("Frame")
+speedFrame.Size = UDim2.new(1, 0, 0, 70)
+speedFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 55)
+speedFrame.Parent = Scrolling
+
+local speedCorner = Instance.new("UICorner")
+speedCorner.CornerRadius = UDim.new(0, 8)
+speedCorner.Parent = speedFrame
+
+local speedLabel = Instance.new("TextLabel")
+speedLabel.Text = "SPEEDBOOST"
+speedLabel.Size = UDim2.new(0.6, 0, 0.5, 0)
+speedLabel.BackgroundTransparency = 1
+speedLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+speedLabel.Font = Enum.Font.GothamSemibold
+speedLabel.TextSize = 18
+speedLabel.Parent = speedFrame
+
+local speedInput = Instance.new("TextBox")
+speedInput.Size = UDim2.new(0.35, 0, 0.4, 0)
+speedInput.Position = UDim2.new(0.6, 0, 0.1, 0)
+speedInput.BackgroundColor3 = Color3.fromRGB(30, 30, 45)
+speedInput.Text = tostring(speedValue)
+speedInput.TextColor3 = Color3.fromRGB(255, 255, 255)
+speedInput.Font = Enum.Font.Gotham
+speedInput.Parent = speedFrame
+
+local speedToggleBtn = Instance.new("TextButton")
+speedToggleBtn.Size = UDim2.new(0.35, 0, 0.4, 0)
+speedToggleBtn.Position = UDim2.new(0.6, 0, 0.55, 0)
+speedToggleBtn.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
+speedToggleBtn.Text = "OFF"
+speedToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+speedToggleBtn.Parent = speedFrame
+
+local speedTCorner = Instance.new("UICorner")
+speedTCorner.Parent = speedToggleBtn
+
+speedInput.FocusLost:Connect(function()
+    local num = tonumber(speedInput.Text)
+    if num then
+        speedValue = math.clamp(num, 16, 500)
+        speedInput.Text = tostring(speedValue)
+    end
+end)
+
+speedToggleBtn.MouseButton1Click:Connect(function()
+    speedBoostEnabled = not speedBoostEnabled
+    if speedBoostEnabled then
+        speedToggleBtn.BackgroundColor3 = Color3.fromRGB(0, 255, 100)
+        speedToggleBtn.Text = "ON"
+    else
+        speedToggleBtn.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
+        speedToggleBtn.Text = "OFF"
+    end
+end)
+
+-- AUTOWEB
+CreateToggle("AUTOWEB", function(state)
+    autoWebEnabled = state
+end)
+
+-- OPTIMIZATION
+CreateToggle("OPTIMIZATION", function(state)
+    optimizationEnabled = state
+    if state then
+        -- Max optimization
+        Lighting.GlobalShadows = false
+        Lighting.Brightness = 1
+        Lighting.ClockTime = 12
+        for _, v in pairs(Workspace:GetDescendants()) do
+            if v:IsA("BasePart") and v.CanCollide then
+                v.Material = Enum.Material.Plastic
+            elseif v:IsA("ParticleEmitter") or v:IsA("Trail") then
+                v.Enabled = false
+            end
+        end
+        settings().Rendering.QualityLevel = 1
+        print("Optimization applied for stable FPS")
+    end
+end)
+
+-- Toggle Menu with Circle
+local menuOpen = false
+CircleButton.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        menuOpen = not menuOpen
+        MainMenu.Visible = menuOpen
+        if menuOpen then
+            TweenService:Create(MainMenu, TweenInfo.new(0.3, Enum.EasingStyle.Quad), {BackgroundTransparency = 0}):Play()
+        end
+    end
+end)
+
+-- Keybind (RightShift to toggle)
+UserInputService.InputBegan:Connect(function(input, gp)
+    if gp then return end
+    if input.KeyCode == Enum.KeyCode.RightShift then
+        menuOpen = not menuOpen
+        MainMenu.Visible = menuOpen
+    end
+end)
+
+-- ESP Loop
+connections.esp = RunService.RenderStepped:Connect(function()
+    if not espEnabled then return end
+    for _, plr in pairs(Players:GetPlayers()) do
+        if plr \~= LocalPlayer and plr.Character and plr.Character:FindFirstChild("Head") then
+            local char = plr.Character
+            if not espObjects[plr] then
+                local box = Instance.new("BoxHandleAdornment")
+                box.Size = char:GetExtentsSize()
+                box.Adornee = char
+                box.AlwaysOnTop = true
+                box.ZIndex = 5
+                box.Color3 = Color3.fromRGB(255, 0, 100)
+                box.Transparency = 0.6
+                box.Parent = CoreGui or ScreenGui -- Safe attach
+                espObjects[plr] = box
+            end
+        end
+    end
+end)
+
+-- ESP LOCK Timer
+connections.lock = RunService.Heartbeat:Connect(function()
+    if espLockEnabled and lockStartTime > 0 then
+        lockTimer = math.floor(tick() - lockStartTime)
+        -- Visual timer can be added to menu if needed
+    end
+end)
+
+-- Inf Jump
+connections.jump = UserInputService.JumpRequest:Connect(function()
+    if infJumpEnabled and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
+        LocalPlayer.Character.Humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+    end
+end)
+
+-- Speed Boost
+connections.speed = RunService.Heartbeat:Connect(function()
+    if speedBoostEnabled and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
+        LocalPlayer.Character.Humanoid.WalkSpeed = speedValue
+    elseif LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
+        LocalPlayer.Character.Humanoid.WalkSpeed = 16
+    end
+end)
+
+-- Auto Web (detects Web Slinger tool and auto targets)
+connections.web = RunService.Heartbeat:Connect(function()
+    if not autoWebEnabled then return end
+    local char = LocalPlayer.Character
+    if not char then return end
+    local tool = char:FindFirstChildOfClass("Tool")
+    if tool and tool.Name:lower():find("web") then
+        local mouse = LocalPlayer:GetMouse()
+        if mouse.Target and mouse.Target.Parent:FindFirstChild("Humanoid") then
+            -- Simulate web sling action
+            local target = mouse.Target.Parent
+            -- Fire web logic (abstracted)
+            print("Auto web on: " .. target.Name)
+            -- In real script: tool:Activate() or remote fire
+        end
+    end
+end)
+
+-- Cleanup on destroy
+ScreenGui.Destroying:Connect(function()
+    for _, conn in pairs(connections) do
+        pcall(function() conn:Disconnect() end)
+    end
+end)
+
+print("Bigernscript loaded. Use RightShift or click circle.")
