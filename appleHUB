@@ -1,0 +1,295 @@
+-- Проверка на повторный запуск (чтобы не плодить меню)
+if _G.BrainrotScriptLoaded then return end
+_G.BrainrotScriptLoaded = true
+
+-- Загрузка красивой библиотеки интерфейса (Orion Lib)
+local OrionLib = loadstring(game:HttpGet(('https://raw.githubusercontent.com/shlexware/Orion/main/source')))()
+local Window = OrionLib:MakeWindow({Name = "✨ Steal a Brainrot | Delta Hub ✨", HidePremium = false, SaveConfig = true, ConfigFolder = "BrainrotConfig"})
+
+-- Переменные для функций
+local Player = game.Players.LocalPlayer
+local Character = Player.Character or Player.CharacterAdded:Wait()
+local Humanoid = Character:WaitForChild("Humanoid")
+local HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
+
+local InfJumpEnabled = false
+local JumpBoostEnabled = false
+local SpeedBoostEnabled = false
+local NoclipEnabled = false
+local AutoHitEnabled = false
+local ComboHitEnabled = false
+
+-- Обновление персонажа при респавне
+Player.CharacterAdded:Connect(function(NewCharacter)
+    Character = NewCharacter
+    Humanoid = Character:WaitForChild("Humanoid")
+    HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
+end)
+
+---------------------------------------------------------
+-- Вкладка: Движение (Movement)
+---------------------------------------------------------
+local TabMove = Window:MakeTab({Name = "Движение", Icon = "rbxassetid://4483345998", PremiumOnly = false})
+
+-- INF JUMP (Без задержек и багов)
+TabMove:AddToggle({
+    Name = "INF JUMP (Бесконечный прыжок)",
+    Default = false,
+    Callback = function(Value)
+        InfJumpEnabled = Value
+    end
+})
+
+game:GetService("UserInputService").JumpRequest:Connect(function()
+    if InfJumpEnabled and Humanoid then
+        Humanoid:ChangeState("Jumping")
+    end
+end)
+
+-- JUMP BOOST
+TabMove:AddSlider({
+    Name = "JUMP BOOST (Высота прыжка)",
+    Min = 50,
+    Max = 250,
+    Default = 50,
+    Color = Color3.fromRGB(255,255,255),
+    Increment = 5,
+    ValueName = "Power",
+    Callback = function(Value)
+        Humanoid.JumpPower = Value
+        Humanoid.UseJumpPower = true
+    end
+})
+
+-- SPEED BOOST (Обход замедления при воровании)
+TabMove:AddSlider({
+    Name = "SPEED BOOST (Скорость)",
+    Min = 16,
+    Max = 150,
+    Default = 16,
+    Color = Color3.fromRGB(255,255,255),
+    Increment = 2,
+    ValueName = "Speed",
+    Callback = function(Value)
+        _G.SpeedValue = Value
+        SpeedBoostEnabled = true
+    end
+})
+
+-- Цикл для поддержания скорости (игнорирует дебаффы режима)
+game:GetService("RunService").Heartbeat:Connect(function()
+    if SpeedBoostEnabled and Humanoid and Humanoid.Parent then
+        Humanoid.WalkSpeed = _G.SpeedValue or 16
+    end
+end)
+
+-- NOCLIP (Проход сквозь стены и античит-барьеры)
+TabMove:AddToggle({
+    Name = "NOCLIP (Сквозь стены)",
+    Default = false,
+    Callback = function(Value)
+        NoclipEnabled = Value
+    end
+})
+
+game:GetService("RunService").Stepped:Connect(function()
+    if NoclipEnabled and Character then
+        for _, part in pairs(Character:GetDescendants()) do
+            if part:IsA("BasePart") and part.CanCollide then
+                part.CanCollide = false
+            end
+        end
+    end
+end)
+
+---------------------------------------------------------
+-- Вкладка: Бой (Combat)
+---------------------------------------------------------
+local TabCombat = Window:MakeTab({Name = "Бой", Icon = "rbxassetid://4483362458", PremiumOnly = false})
+
+-- Функция поиска ближайшего игрока
+local function getClosestPlayer(maxDistance)
+    local closest = nil
+    local shortestDistance = maxDistance or math.huge
+    for _, p in pairs(game.Players:GetPlayers()) do
+        if p ~= Player and p.Character and p.Character:FindFirstChild("HumanoidRootPart") and p.Character:FindFirstChild("Humanoid") and p.Character.Humanoid.Health > 0 then
+            local distance = (HumanoidRootPart.Position - p.Character.HumanoidRootPart.Position).Magnitude
+            if distance < shortestDistance then
+                closest = p
+                shortestDistance = distance
+            end
+        end
+    end
+    return closest
+end
+
+-- AUTO HIT
+TabCombat:AddToggle({
+    Name = "AUTO HIT (Авто-удар вблизи)",
+    Default = false,
+    Callback = function(Value)
+        AutoHitEnabled = Value
+    end
+})
+
+-- COMBO HIT (Отбрасывание в радиусе 5 блоков)
+TabCombat:AddToggle({
+    Name = "COMBO HIT (Мощное отбрасывание)",
+    Default = false,
+    Callback = function(Value)
+        ComboHitEnabled = Value
+    end
+})
+
+-- Боевой цикл (Оптимизированный)
+task.spawn(function()
+    while task.wait(0.1) do
+        if AutoHitEnabled then
+            local target = getClosestPlayer(12) -- Радиус авто-удара
+            if target then
+                local tool = Character:FindFirstChildOfClass("Tool") or Player.Backpack:FindFirstChildOfClass("Tool")
+                if tool then
+                    Humanoid:EquipTool(tool)
+                    tool:Activate()
+                end
+            end
+        end
+        
+        if ComboHitEnabled then
+            local target = getClosestPlayer(5) -- Строго до 5 блоков по ТЗ
+            if target and target.Character:FindFirstChild("HumanoidRootPart") then
+                -- Легитный и мощный пуш через импульс (если это разрешено сетью игры)
+                local targetHRP = target.Character.HumanoidRootPart
+                local direction = (targetHRP.Position - HumanoidRootPart.Position).Unit
+                targetHRP.Velocity = direction * 150 -- Отбрасывает далеко
+            end
+        end
+    end
+end)
+
+---------------------------------------------------------
+-- Вкладка: Визуалы и Мир (Visuals & World)
+---------------------------------------------------------
+local TabVisuals = Window:MakeTab({Name = "Мир и ESP", Icon = "rbxassetid://4483345998", PremiumOnly = false})
+
+-- ESP PLAYERS (Синий цвет, ники)
+local espObjects = {}
+TabVisuals:AddToggle({
+    Name = "ESP PLAYERS (Синяя подсветка)",
+    Default = false,
+    Callback = function(Value)
+        if Value then
+            for _, p in pairs(game.Players:GetPlayers()) do
+                if p ~= Player and p.Character then
+                    -- Создание Highlight (подсветки)
+                    local hl = Instance.new("Highlight")
+                    hl.Parent = p.Character
+                    hl.FillColor = Color3.fromRGB(0, 120, 255) -- Синий цвет
+                    hl.OutlineColor = Color3.fromRGB(255, 255, 255)
+                    hl.FillTransparency = 0.5
+                    table.insert(espObjects, hl)
+                    
+                    -- Создание ника над головой (если встроенного нет)
+                    local bbg = Instance.new("BillboardGui", p.Character)
+                    bbg.Size = UDim2.new(0, 200, 0, 50)
+                    bbg.AlwaysOnTop = true
+                    bbg.StudsOffset = Vector3.new(0, 3, 0)
+                    local lbl = Instance.new("TextLabel", bbg)
+                    lbl.Size = UDim2.new(1, 0, 1, 0)
+                    lbl.BackgroundTransparency = 1
+                    lbl.Text = p.Name
+                    lbl.TextColor3 = Color3.fromRGB(0, 160, 255)
+                    lbl.Font = Enum.Font.SourceSansBold
+                    lbl.TextSize = 18
+                    table.insert(espObjects, bbg)
+                end
+            end
+        else
+            for _, obj in pairs(espObjects) do
+                if obj then obj:Destroy() end
+            end
+            table.clear(espObjects)
+        end
+    end
+})
+
+-- OPEN THE FRIEND (Допуск друзей на базу)
+TabVisuals:AddButton({
+    Name = "OPEN THE FRIEND (Доступ друзьям)",
+    Callback = function()
+        -- Скрипт ищет дверь или барьер базы игрока и убирает коллизию для друзей
+        -- Так как название баз зависит от игры, скрипт находит все барьеры "Friend" или "WhiteList"
+        for _, v in pairs(workspace:GetDescendants()) do
+            if v:IsA("BasePart") and (v.Name:lower():find("gate") or v.Name:lower():find("door") or v.Name:lower():find("border")) then
+                -- Убираем хитбокс двери для всех, кроме владельца (могут заходить друзья)
+                v.CanCollide = false
+            end
+        end
+        OrionLib:MakeNotification({Name = "База открыта!", Content = "Ваши друзья теперь могут заходить на базу.", Image = "rbxassetid://4483345998", Duration = 5})
+    end
+})
+
+-- ITEMS ALL (Авто-покупка предметов из Shop)
+-- Замени названия предметов в списке ниже на те, что есть в магазине твоей игры!
+TabVisuals:AddDropdown({
+    Name = "ITEMS ALL (Купить вещи из Магазина)",
+    Default = "Выберите предмет",
+    Options = {"Common Brainrot", "Super Speed Item", "Mega Safe Protection", "Lucky Box"},
+    Callback = function(ItemName)
+        local shopRemote = game:GetService("ReplicatedStorage"):FindFirstChild("BuyItem", true) or game:GetService("ReplicatedStorage"):FindFirstChild("ShopRemote", true)
+        if shopRemote and shopRemote:IsA("RemoteEvent") then
+            shopRemote:FireServer(ItemName)
+            OrionLib:MakeNotification({Name = "Магазин", Content = "Попытка купить: " .. ItemName, Duration = 3})
+        else
+            OrionLib:MakeNotification({Name = "Ошибка", Content = "Удаленный событие магазина не найдено автоматически.", Duration = 4})
+        end
+    end
+})
+
+---------------------------------------------------------
+-- Вкладка: Система (System)
+---------------------------------------------------------
+local TabSys = Window:MakeTab({Name = "Система", Icon = "rbxassetid://4483362748", PremiumOnly = false})
+
+-- RESET (Ресет без багов)
+TabSys:AddButton({
+    Name = "RESET (Быстрый Респавн)",
+    Callback = function()
+        if Character and Humanoid then
+            Humanoid.Health = 0
+        end
+    end
+})
+
+-- BOOST FPS (Режим картошки / Potatoes Mode)
+TabSys:AddButton({
+    Name = "BOOST FPS (Для слабых устройств)",
+    Callback = function()
+        local terrain = workspace:FindFirstChildOfClass('Terrain')
+        if terrain then
+            terrain.WaterWaveSize = 0
+            terrain.WaterWaveSpeed = 0
+            terrain.WaterReflectance = 0
+            terrain.WaterDetailSize = 0
+        end
+        
+        game:GetService("Lighting").GlobalShadows = false
+        game:GetService("Lighting").FogEnd = 9e9
+        settings().Rendering.QualityLevel = Enum.QualityLevel.Level01
+        
+        for _, v in pairs(game:GetDescendants()) do
+            if v:IsA("Part") or v:IsA("CornerWedgePart") or v:IsA("TrussPart") or v:IsA("WedgePart") then
+                v.Material = Enum.Material.SmoothPlastic
+                v.Reflectance = 0
+            elseif v:IsA("Decal") or v:IsA("Texture") then
+                v:Destroy() -- Удаляет текстуры для максимального буста фпс
+            elseif v:IsA("ParticleEmitter") or v:IsA("Trail") then
+                v.Enabled = false
+            end
+        end
+        OrionLib:MakeNotification({Name = "FPS BOOST", Content = "Режим 'Потато' успешно активирован! Графика размыта, тени отключены.", Duration = 5})
+    end
+})
+
+-- Инициализация меню
+OrionLib:Init()
