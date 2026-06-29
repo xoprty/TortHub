@@ -1,0 +1,290 @@
+--[=[
+    Advanced Steal a Brainrot Script v2
+    Optimized for Delta & Mobile Executing
+--]=]
+
+local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local LocalPlayer = Players.LocalPlayer
+
+-- Очистка старых версий
+local oldMenu = LocalPlayer:WaitForChild("PlayerGui"):FindFirstChild("BrainrotCyberMenu")
+if oldMenu then oldMenu:Destroy() end
+
+-- Создание интерфейса
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "BrainrotCyberMenu"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+
+-- Главное Меню
+local MainFrame = Instance.new("Frame")
+MainFrame.Name = "MainFrame"
+MainFrame.Size = UDim2.new(0, 180, 0, 220)
+MainFrame.Position = UDim2.new(0.5, -90, 0.4, -110)
+MainFrame.BackgroundColor3 = Color3.fromRGB(20, 18, 26) -- Глубокий тёмный
+MainFrame.BorderSizePixel = 0
+MainFrame.Active = true
+MainFrame.Draggable = true
+MainFrame.Parent = ScreenGui
+
+local MainCorner = Instance.new("UICorner")
+MainCorner.CornerRadius = UDim.new(0, 10)
+MainCorner.Parent = MainFrame
+
+-- Красивая неоновая обводка
+local UIStroke = Instance.new("UIStroke")
+UIStroke.Color = Color3.fromRGB(140, 80, 255) -- Фиолетовый неон
+UIStroke.Thickness = 1.5
+UIStroke.Parent = MainFrame
+
+-- Кнопка закрытия (КРЕСТИК СЛЕВА)
+local CloseBtn = Instance.new("TextButton")
+CloseBtn.Size = UDim2.new(0, 25, 0, 25)
+CloseBtn.Position = UDim2.new(0, 5, 0, 3)
+CloseBtn.BackgroundTransparency = 1
+CloseBtn.Text = "×"
+CloseBtn.TextColor3 = Color3.fromRGB(255, 70, 70)
+CloseBtn.TextSize = 22
+CloseBtn.Font = Enum.Font.SourceSansBold
+CloseBtn.Parent = MainFrame
+
+-- Заголовок (Смещен вправо из-за крестика)
+local Title = Instance.new("TextLabel")
+Title.Size = UDim2.new(1, -35, 0, 28)
+Title.Position = UDim2.new(0, 32, 0, 0)
+Title.BackgroundTransparency = 1
+Title.Text = "Brainrot Hub"
+Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+Title.TextSize = 14
+Title.Font = Enum.Font.GothamBold
+Title.TextXAlignment = Enum.TextXAlignment.Left
+Title.Parent = MainFrame
+
+-- Кнопка открытия ("W")
+local OpenBtn = Instance.new("TextButton")
+OpenBtn.Name = "OpenButton"
+OpenBtn.Size = UDim2.new(0, 45, 0, 45)
+OpenBtn.Position = UDim2.new(0.1, 0, 0.3, 0)
+OpenBtn.BackgroundColor3 = Color3.fromRGB(25, 22, 32)
+OpenBtn.Text = "W"
+OpenBtn.TextColor3 = Color3.fromRGB(140, 80, 255)
+OpenBtn.TextSize = 20
+OpenBtn.Font = Enum.Font.GothamBold
+OpenBtn.Visible = false
+OpenBtn.Active = true
+OpenBtn.Draggable = true
+OpenBtn.Parent = ScreenGui
+
+local OpenCorner = Instance.new("UICorner")
+OpenCorner.CornerRadius = UDim.new(1, 0)
+OpenCorner.Parent = OpenBtn
+
+local OpenStroke = Instance.new("UIStroke")
+OpenStroke.Color = Color3.fromRGB(140, 80, 255)
+OpenStroke.Thickness = 1.5
+OpenStroke.Parent = OpenBtn
+
+-- Контейнер для кнопок (список)
+local ButtonContainer = Instance.new("Frame")
+ButtonContainer.Size = UDim2.new(1, 0, 1, -30)
+ButtonContainer.Position = UDim2.new(0, 0, 0, 30)
+ButtonContainer.BackgroundTransparency = 1
+ButtonContainer.Parent = MainFrame
+
+local UIList = Instance.new("UIListLayout")
+UIList.Parent = ButtonContainer
+UIList.SortOrder = Enum.SortOrder.LayoutOrder
+UIList.Padding = UDim.new(0, 6)
+UIList.HorizontalAlignment = Enum.HorizontalAlignment.Center
+
+-- Дистанция (Индикатор)
+local DistanceLabel = Instance.new("TextLabel")
+DistanceLabel.Size = UDim2.new(0, 160, 0, 18)
+DistanceLabel.BackgroundTransparency = 1
+DistanceLabel.Text = "Distance: 0m"
+DistanceLabel.TextColor3 = Color3.fromRGB(180, 180, 190)
+DistanceLabel.TextSize = 11
+DistanceLabel.Font = Enum.Font.Gotham
+DistanceLabel.Parent = ButtonContainer
+
+-- Функция создания кнопок интерфейса
+local function createMenuButton(name, text, baseColor)
+    local btn = Instance.new("TextButton")
+    btn.Name = name
+    btn.Size = UDim2.new(0, 160, 0, 32)
+    btn.BackgroundColor3 = baseColor
+    btn.BorderSizePixel = 0
+    btn.Text = text
+    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    btn.TextSize = 13
+    btn.Font = Enum.Font.GothamBold
+    btn.Parent = ButtonContainer
+    
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 6)
+    corner.Parent = btn
+    
+    return btn
+end
+
+local TpZoneBtn = createMenuButton("TpZone", "TpZone", Color3.fromRGB(45, 25, 85))
+local JumpBBtn = createMenuButton("JumpB", "InfJump: OFF", Color3.fromRGB(40, 40, 45))
+local StealResetBtn = createMenuButton("StealReset", "StealReset", Color3.fromRGB(100, 25, 45))
+
+-- ==========================================================
+-- СКРИПТОВАЯ ЛОГИКА
+-- ==========================================================
+
+-- Поведение сворачивания
+CloseBtn.MouseButton1Click:Connect(function()
+    MainFrame.Visible = false
+    OpenBtn.Position = UDim2.new(0, MainFrame.Position.X.Offset + 65, 0, MainFrame.Position.Y.Offset + 80)
+    OpenBtn.Visible = true
+end)
+
+OpenBtn.MouseButton1Click:Connect(function()
+    OpenBtn.Visible = false
+    MainFrame.Visible = true
+end)
+
+-- Функция автоматического поиска зоны сбора (Зеленой/Collect Zone)
+local function getCollectZone()
+    local paths = {workspace:FindFirstChild("Zones"), workspace:FindFirstChild("Tycoons"), workspace}
+    for _, path in pairs(paths) do
+        if path then
+            for _, obj in pairs(path:GetDescendants()) do
+                if obj:IsA("BasePart") and (obj.Name:lower():find("collect") or obj.Name:lower():find("multi") or obj.Name:lower():find(LocalPlayer.Name:lower())) then
+                    -- Проверяем, преобладает ли зеленый цвет в палитре зоны
+                    if obj.Color.G > obj.Color.R and obj.Color.G > obj.Color.B then
+                        return obj
+                    end
+                end
+            end
+        end
+    end
+    return nil
+end
+
+-- Обновление ползунка / индикатора дистанции в реальном времени
+RunService.Heartbeat:Connect(function()
+    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+        local zone = getCollectZone()
+        if zone then
+            local dist = (LocalPlayer.Character.HumanoidRootPart.Position - zone.Position).Magnitude
+            DistanceLabel.Text = "Distance to Base: " .. math.floor(dist) .. "m"
+        else
+            DistanceLabel.Text = "Distance: Zone Not Found"
+        end
+    end
+end)
+
+-- 1. ЛОГИКА КНОПКИ TPZONE (Безопасный перенос без выпадения предметов)
+TpZoneBtn.MouseButton1Click:Connect(function()
+    local char = LocalPlayer.Character
+    if not char or not char:FindFirstChild("HumanoidRootPart") then return end
+    
+    local tool = char:FindFirstChildOfClass("Tool")
+    if not tool then
+        -- Визуальный эффект ошибки, если ничего не украдено
+        TpZoneBtn.Text = "Hold Brainrot first!"
+        task.wait(1)
+        TpZoneBtn.Text = "TpZone"
+        return
+    end
+    
+    local zone = getCollectZone()
+    if zone then
+        local hrp = char.HumanoidRootPart
+        local targetCFrame = CFrame.new(zone.Position + Vector3.new(0, 3, 0))
+        
+        -- Bypass: Плавное перемещение "микро-телепортами" каждый кадр.
+        -- Это обходит проверки на скорость (Speed-Check) и моментальные координаты, сохраняя предмет в руках.
+        local distance = (hrp.Position - targetCFrame.Position).Magnitude
+        local speed = 160 -- Безопасная скорость для обхода
+        local duration = distance / speed
+        local startCFrame = hrp.CFrame
+        local elapsed = 0
+        
+        local connection
+        connection = RunService.Heartbeat:Connect(function(delta)
+            elapsed = elapsed + delta
+            local progress = math.min(elapsed / duration, 1)
+            
+            if char and char:FindFirstChild("HumanoidRootPart") then
+                hrp.CFrame = startCFrame:Lerp(targetCFrame, progress)
+                hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0) -- гасим скорость, чтобы не швыряло античитом
+            end
+            
+            if progress >= 1 then
+                connection:Disconnect()
+            end
+        end)
+    end
+end)
+
+-- 2. ЛОГИКА КНОПКИ JUMPB (INFINITE JUMP)
+local infJumpActive = false
+local jumpFixConnection
+
+JumpBBtn.MouseButton1Click:Connect(function()
+    infJumpActive = not infJumpActive
+    if infJumpActive then
+        JumpBBtn.Text = "InfJump: ON"
+        JumpBBtn.BackgroundColor3 = Color3.fromRGB(140, 80, 255)
+        
+        -- Ловим нажатие прыжка в воздухе напрямую через систему ввода игрока
+        jumpFixConnection = UserInputService.JumpRequest:Connect(function()
+            if infJumpActive and LocalPlayer.Character then
+                local humanoid = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+                if humanoid then
+                    humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+                end
+            end
+        end)
+    else
+        JumpBBtn.Text = "InfJump: OFF"
+        JumpBBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 45)
+        if jumpFixConnection then
+            jumpFixConnection:Disconnect()
+        end
+    end
+end)
+
+-- 3. ЛОГИКА КНОПКИ STEALRESET (Глитч сохранения предмета через ресет)
+StealResetBtn.MouseButton1Click:Connect(function()
+    local char = LocalPlayer.Character
+    if not char then return end
+    
+    local tool = char:FindFirstChildOfClass("Tool")
+    if tool then
+        -- Заставляем игру думать, что брэинрот привязан к структуре игрока перманентно
+        tool.Parent = LocalPlayer.Backpack
+        task.wait(0.05)
+        
+        -- Ломаем здоровье для респавна
+        local humanoid = char:FindFirstChildOfClass("Humanoid")
+        if humanoid then
+            humanoid.Health = 0
+        end
+        
+        -- Сразу при перерождении автоматически экипируем его обратно
+        local spawnConnection
+        spawnConnection = LocalPlayer.CharacterAdded:Connect(function(newChar)
+            local backpack = LocalPlayer:WaitForChild("Backpack")
+            local targetTool = backpack:WaitForChild(tool.Name, 5)
+            if targetTool then
+                task.wait(0.1)
+                targetTool.Parent = newChar
+            end
+            spawnConnection:Disconnect()
+        end)
+    else
+        StealResetBtn.Text = "No Item to Bug!"
+        task.wait(1)
+        StealResetBtn.Text = "StealReset"
+    end
+end)
