@@ -1,0 +1,143 @@
+-- узел: meridian/roblox_speed_modifier_unlimited
+-- deps: Executor Environment (Lua uup)
+-- параметры: Минимальная скорость: 16, Максимальная скорость: 999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999
+
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local CoreGui = game:GetService("CoreGui")
+
+-- Локальное состояние систем
+local SpeedActive = false
+local SpeedValue = 16
+
+-- Создание графического интерфейса
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "Meridian_Speed_Core"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+ScreenGui.Parent = CoreGui
+
+-- Круглая кнопка вызова
+local CircleButton = Instance.new("TextButton")
+local UICorner_Circle = Instance.new("UICorner")
+
+CircleButton.Name = "CircleButton"
+CircleButton.Size = UDim2.new(0, 55, 0, 55)
+CircleButton.Position = UDim2.new(0, 30, 0.5, -27)
+CircleButton.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
+CircleButton.Text = "S"
+CircleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+CircleButton.Font = Enum.Font.SourceSansBold
+CircleButton.TextSize = 26
+CircleButton.Active = true
+CircleButton.Draggable = true
+CircleButton.Parent = ScreenGui
+
+UICorner_Circle.CornerRadius = UDim.new(1, 0)
+UICorner_Circle.Parent = CircleButton
+
+-- Прямоугольное меню управления
+local MainMenu = Instance.new("Frame")
+local UICorner_Main = Instance.new("UICorner")
+local UIStroke_Main = Instance.new("UIStroke")
+local SpeedToggle = Instance.new("TextButton")
+local UICorner_Toggle = Instance.new("UICorner")
+local SpeedInput = Instance.new("TextBox")
+local UICorner_Input = Instance.new("UICorner")
+
+MainMenu.Name = "MainMenu"
+MainMenu.Size = UDim2.new(0, 180, 0, 130)
+MainMenu.Position = UDim2.new(0.5, -90, 0.5, -65)
+MainMenu.BackgroundColor3 = Color3.fromRGB(20, 20, 22)
+MainMenu.Visible = false
+MainMenu.Active = true
+MainMenu.Draggable = true
+MainMenu.Parent = ScreenGui
+
+UICorner_Main.CornerRadius = UDim.new(0, 10)
+UICorner_Main.Parent = MainMenu
+
+UIStroke_Main.Color = Color3.fromRGB(75, 75, 85)
+UIStroke_Main.Thickness = 1
+UIStroke_Main.Parent = MainMenu
+
+-- Кнопка переключения SPEED (ON/OFF)
+SpeedToggle.Name = "SpeedToggle"
+SpeedToggle.Size = UDim2.new(0, 140, 0, 35)
+SpeedToggle.Position = UDim2.new(0.5, -70, 0, 20)
+SpeedToggle.BackgroundColor3 = Color3.fromRGB(40, 40, 45)
+SpeedToggle.Text = "SPEED: OFF"
+SpeedToggle.TextColor3 = Color3.fromRGB(255, 255, 255)
+SpeedToggle.Font = Enum.Font.SourceSansBold
+SpeedToggle.TextSize = 16
+SpeedToggle.Parent = MainMenu
+
+UICorner_Toggle.CornerRadius = UDim.new(0, 6)
+UICorner_Toggle.Parent = SpeedToggle
+
+-- Поле ввода значения скорости
+SpeedInput.Name = "SpeedInput"
+SpeedInput.Size = UDim2.new(0, 140, 0, 35)
+SpeedInput.Position = UDim2.new(0.5, -70, 0, 70)
+SpeedInput.BackgroundColor3 = Color3.fromRGB(30, 30, 32)
+SpeedInput.Text = "16"
+SpeedInput.TextColor3 = Color3.fromRGB(0, 255, 150)
+SpeedInput.Font = Enum.Font.SourceSansBold
+SpeedInput.TextSize = 14
+SpeedInput.PlaceholderText = "Ввод скорости..."
+SpeedInput.Parent = MainMenu
+
+UICorner_Input.CornerRadius = UDim.new(0, 6)
+UICorner_Input.Parent = SpeedInput
+
+-- Управление видимостью прямоугольного меню
+CircleButton.MouseButton1Click:Connect(function()
+    MainMenu.Visible = not MainMenu.Visible
+end)
+
+-- Обработка переключателя скорости
+SpeedToggle.MouseButton1Click:Connect(function()
+    SpeedActive = not SpeedActive
+    if SpeedActive then
+        SpeedToggle.BackgroundColor3 = Color3.fromRGB(0, 120, 255)
+        SpeedToggle.Text = "SPEED: ON"
+    else
+        SpeedToggle.BackgroundColor3 = Color3.fromRGB(40, 40, 45)
+        SpeedToggle.Text = "SPEED: OFF"
+        
+        -- Сброс скорости до стандартной при выключении
+        pcall(function()
+            if LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
+                LocalPlayer.Character:FindFirstChildOfClass("Humanoid").WalkSpeed = 16
+            end
+        end)
+    end
+end)
+
+-- Валидация и фиксация ввода сверхбольшого значения
+SpeedInput.FocusLost:Connect(function()
+    local enteredValue = tonumber(SpeedInput.Text)
+    if enteredValue then
+        -- Ограничение снизу (16), верхний предел снят до максимума double float
+        if enteredValue < 16 then
+            SpeedValue = 16
+        else
+            SpeedValue = enteredValue
+        end
+        SpeedInput.Text = tostring(SpeedValue)
+    else
+        SpeedInput.Text = tostring(SpeedValue)
+    end
+end)
+
+-- Постоянный цикл удержания скорости в активном состоянии
+RunService.PreSimulation:Connect(function()
+    if SpeedActive and LocalPlayer.Character then
+        local humanoid = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+        if humanoid then
+            humanoid.WalkSpeed = SpeedValue
+        end
+    end
+end)
