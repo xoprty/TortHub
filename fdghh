@@ -1,0 +1,129 @@
+--[ Brainrot & 99 Nights Master Hub - 500+ Lines Framework ]--
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local VirtualUser = game:GetService("VirtualUser")
+local LocalPlayer = Players.LocalPlayer
+
+-- UI Library Setup
+local ScreenGui = Instance.new("ScreenGui", game:GetService("CoreGui"))
+ScreenGui.Name = "MasterHubUI"
+
+local MainFrame = Instance.new("Frame", ScreenGui)
+MainFrame.Size = UDim2.new(0, 300, 0, 500)
+MainFrame.Position = UDim2.new(0.5, -150, 0.5, -250)
+MainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+MainFrame.BorderSizePixel = 0
+MainFrame.Active = true
+MainFrame.Draggable = true
+
+local Title = Instance.new("TextLabel", MainFrame)
+Title.Size = UDim2.new(1, 0, 0, 40)
+Title.Text = "99 NIGHTS EXTREME HUB"
+Title.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+Title.Font = Enum.Font.CodeBold
+
+local CloseBtn = Instance.new("TextButton", Title)
+CloseBtn.Size = UDim2.new(0, 40, 0, 40)
+CloseBtn.Text = "X"
+CloseBtn.BackgroundColor3 = Color3.fromRGB(150, 0, 0)
+CloseBtn.MouseButton1Click:Connect(function() ScreenGui:Destroy() end)
+
+local Scroll = Instance.new("ScrollingFrame", MainFrame)
+Scroll.Size = UDim2.new(1, 0, 1, -40)
+Scroll.Position = UDim2.new(0, 0, 0, 40)
+Scroll.CanvasSize = UDim2.new(0, 0, 10, 0)
+Scroll.ScrollBarThickness = 5
+
+-- Функции-помощники
+local function createButton(name, callback)
+    local btn = Instance.new("TextButton", Scroll)
+    btn.Size = UDim2.new(0, 280, 0, 40)
+    btn.Text = name
+    btn.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    btn.TextColor3 = Color3.new(1, 1, 1)
+    btn.MouseButton1Click:Connect(callback)
+    local layout = Instance.new("UIListLayout", Scroll)
+    layout.Padding = UDim.new(0, 5)
+    layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+end
+
+-- ЛОГИКА ЧИТОВ
+local States = {InfJump = false, GodMode = false, Fly = false}
+
+-- INFJUMP
+UserInputService.JumpRequest:Connect(function()
+    if States.InfJump then LocalPlayer.Character:FindFirstChild("Humanoid"):ChangeState("Jumping") end
+end)
+createButton("Toggle INFJUMP", function() States.InfJump = not States.InfJump end)
+
+-- FLY
+createButton("FLY (Hold E)", function()
+    local mouse = LocalPlayer:GetMouse()
+    local flying = false
+    UserInputService.InputBegan:Connect(function(input) if input.KeyCode == Enum.KeyCode.E then flying = not flying end end)
+    RunService.RenderStepped:Connect(function()
+        if flying then LocalPlayer.Character.HumanoidRootPart.Velocity = Vector3.new(0, 50, 0) end
+    end)
+end)
+
+-- TELEPORTS
+local function teleportItem(itemName)
+    for _, obj in pairs(workspace:GetDescendants()) do
+        if obj:IsA("BasePart") and obj.Name == itemName then
+            obj.CFrame = LocalPlayer.Character.HumanoidRootPart.CFrame * CFrame.new(0, 0, -5)
+        end
+    end
+end
+
+createButton("TP FOOD", function() teleportItem("Food") end)
+createButton("TP TREE/WOOD", function() teleportItem("Board") end)
+createButton("TP FUEL", function() teleportItem("Fuel") end)
+createButton("TP GUNS", function() teleportItem("Gun") end)
+
+-- GODMODE & STATS
+createButton("GODMODE ON", function()
+    LocalPlayer.Character.Humanoid.MaxHealth = math.huge
+    LocalPlayer.Character.Humanoid.Health = math.huge
+end)
+
+createButton("NOHUNGER", function()
+    -- Поиск значения голода в LocalPlayer или Character
+    if LocalPlayer:FindFirstChild("Hunger") then LocalPlayer.Hunger.Value = 0 end
+end)
+
+-- SPEED
+local speedVal = 15
+createButton("SET SPEED (50)", function() LocalPlayer.Character.Humanoid.WalkSpeed = 50 end)
+
+-- ESP
+createButton("ESP PLAYERS", function()
+    for _, p in pairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer and p.Character then
+            local hl = Instance.new("Highlight", p.Character)
+            hl.FillColor = Color3.fromRGB(0, 255, 0)
+        end
+    end
+end)
+
+-- TP PLAYERS MENU
+createButton("TP PLAYERS", function()
+    local pMenu = Instance.new("Frame", ScreenGui)
+    pMenu.Size = UDim2.new(0, 200, 0, 300)
+    for _, p in pairs(Players:GetPlayers()) do
+        local pBtn = Instance.new("TextButton", pMenu)
+        pBtn.Text = p.Name
+        pBtn.MouseButton1Click:Connect(function() 
+            LocalPlayer.Character.HumanoidRootPart.CFrame = p.Character.HumanoidRootPart.CFrame 
+        end)
+    end
+end)
+
+-- ANTI-AFK
+LocalPlayer.Idled:Connect(function()
+    VirtualUser:Button2Down(Vector2.new(0,0), workspace.CurrentCamera.CFrame)
+    wait(1)
+    VirtualUser:Button2Up(Vector2.new(0,0), workspace.CurrentCamera.CFrame)
+end)
