@@ -1,0 +1,532 @@
+-- [[ Скрипт: DeltaBrainrot.lua ]]
+-- Место выполнения: LocalScript в StarterPlayerScripts или StarterGui
+-- Версия: 1.0
+
+local Players = game:GetService("Players")
+local Lighting = game:GetService("Lighting")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local LocalPlayer = Players.LocalPlayer
+local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+local Humanoid = Character:WaitForChild("Humanoid")
+
+-- ===== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ =====
+
+-- Получение персонажа с ожиданием
+local function getCharacter()
+    if not LocalPlayer.Character then
+        return nil
+    end
+    return LocalPlayer.Character
+end
+
+-- ===== HUD (время, FPS, пинг) =====
+
+local function createHUD()
+    local hud = Instance.new("ScreenGui")
+    hud.Name = "DeltaHUD"
+    hud.Parent = LocalPlayer.PlayerGui
+
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(0, 180, 0, 80)
+    frame.Position = UDim2.new(0, 10, 0, 10)
+    frame.BackgroundTransparency = 0.5
+    frame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+    frame.BorderSizePixel = 0
+    frame.Parent = hud
+
+    local timeLabel = Instance.new("TextLabel")
+    timeLabel.Size = UDim2.new(1, 0, 0.33, 0)
+    timeLabel.Position = UDim2.new(0, 0, 0, 0)
+    timeLabel.BackgroundTransparency = 1
+    timeLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    timeLabel.TextScaled = true
+    timeLabel.Font = Enum.Font.Gotham
+    timeLabel.Text = "TIME: 00:00"
+    timeLabel.Parent = frame
+
+    local fpsLabel = Instance.new("TextLabel")
+    fpsLabel.Size = UDim2.new(1, 0, 0.33, 0)
+    fpsLabel.Position = UDim2.new(0, 0, 0.33, 0)
+    fpsLabel.BackgroundTransparency = 1
+    fpsLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    fpsLabel.TextScaled = true
+    fpsLabel.Font = Enum.Font.Gotham
+    fpsLabel.Text = "FPS: 0"
+    fpsLabel.Parent = frame
+
+    local pingLabel = Instance.new("TextLabel")
+    pingLabel.Size = UDim2.new(1, 0, 0.33, 0)
+    pingLabel.Position = UDim2.new(0, 0, 0.66, 0)
+    pingLabel.BackgroundTransparency = 1
+    pingLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    pingLabel.TextScaled = true
+    pingLabel.Font = Enum.Font.Gotham
+    pingLabel.Text = "PING: 0"
+    pingLabel.Parent = frame
+
+    -- Обновление HUD
+    local frameCount = 0
+    local timeAccum = 0
+    local lastPingUpdate = 0
+
+    RunService.RenderStepped:Connect(function(dt)
+        -- Время (локальное)
+        local now = os.date("*t")
+        timeLabel.Text = string.format("TIME: %02d:%02d", now.hour, now.min)
+
+        -- FPS
+        frameCount = frameCount + 1
+        timeAccum = timeAccum + dt
+        if timeAccum >= 0.5 then
+            fpsLabel.Text = "FPS: " .. math.floor(frameCount / timeAccum)
+            frameCount = 0
+            timeAccum = 0
+        end
+
+        -- Пинг (обновляем раз в 2 секунды)
+        local ping = game:GetService("Stats"):FindFirstChild("Network") and game:GetService("Stats").Network:FindFirstChild("ServerStatsItem") and game:GetService("Stats").Network.ServerStatsItem:FindFirstChild("Data") and game:GetService("Stats").Network.ServerStatsItem.Data:FindFirstChild("Ping") and game:GetService("Stats").Network.ServerStatsItem.Data.Ping.Value or 0
+        pingLabel.Text = "PING: " .. tostring(math.floor(ping))
+    end)
+
+    return hud
+end
+
+createHUD()
+
+-- ===== СОЗДАНИЕ ГЛАВНОГО МЕНЮ =====
+
+local mainGui = Instance.new("ScreenGui")
+mainGui.Name = "DeltaMenu"
+mainGui.Parent = LocalPlayer.PlayerGui
+mainGui.Enabled = false  -- Скрыто по умолчанию, показывается по клику на круглую кнопку
+
+-- Круглая кнопка вызова меню (всегда видна)
+local toggleButton = Instance.new("ImageButton")
+toggleButton.Size = UDim2.new(0, 50, 0, 50)
+toggleButton.Position = UDim2.new(0.5, -25, 0.5, -25)
+toggleButton.AnchorPoint = Vector2.new(0.5, 0.5)
+toggleButton.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+toggleButton.BackgroundTransparency = 0.2
+toggleButton.Image = "rbxassetid://10734836261"  -- круглая иконка (можно заменить)
+toggleButton.ImageColor3 = Color3.fromRGB(255, 255, 255)
+toggleButton.ImageTransparency = 0.2
+toggleButton.Parent = LocalPlayer.PlayerGui
+
+-- Эффект анимации при наведении
+toggleButton.MouseEnter:Connect(function()
+    TweenService:Create(toggleButton, TweenInfo.new(0.2), {Size = UDim2.new(0, 55, 0, 55)}):Play()
+end)
+toggleButton.MouseLeave:Connect(function()
+    TweenService:Create(toggleButton, TweenInfo.new(0.2), {Size = UDim2.new(0, 50, 0, 50)}):Play()
+end)
+
+-- Основное окно (прямоугольное)
+local mainFrame = Instance.new("Frame")
+mainFrame.Size = UDim2.new(0, 400, 0, 300)
+mainFrame.Position = UDim2.new(0.5, -200, 0.5, -150)
+mainFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+mainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
+mainFrame.BackgroundTransparency = 0.1
+mainFrame.BorderSizePixel = 0
+mainFrame.Parent = mainGui
+
+-- Заголовок
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, 0, 0, 40)
+title.Position = UDim2.new(0, 0, 0, 0)
+title.BackgroundTransparency = 1
+title.Text = "Delta Brainrot"
+title.TextColor3 = Color3.fromRGB(255, 200, 100)
+title.TextScaled = true
+title.Font = Enum.Font.GothamBold
+title.Parent = mainFrame
+
+-- Панель с кнопками подменю (CHIT, ESP, FPSB)
+local menuButtons = {}
+local menuNames = {"CHIT", "ESP", "FPSB"}
+local menuPositions = {0.1, 0.4, 0.7}
+
+for i, name in ipairs(menuNames) do
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(0.2, 0, 0, 30)
+    btn.Position = UDim2.new(menuPositions[i], 0, 0.15, 0)
+    btn.BackgroundColor3 = Color3.fromRGB(60, 60, 80)
+    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    btn.Text = name
+    btn.Font = Enum.Font.Gotham
+    btn.TextScaled = true
+    btn.BorderSizePixel = 0
+    btn.Parent = mainFrame
+    menuButtons[name] = btn
+end
+
+-- Контейнеры для подменю (изначально скрыты)
+local subFrames = {}
+
+for _, name in ipairs(menuNames) do
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(0.9, 0, 0.7, 0)
+    frame.Position = UDim2.new(0.05, 0, 0.25, 0)
+    frame.BackgroundTransparency = 1
+    frame.Visible = false
+    frame.Parent = mainFrame
+    subFrames[name] = frame
+end
+
+-- ===== ПОДМЕНЮ CHIT =====
+
+local chitFrame = subFrames["CHIT"]
+
+-- INFJ (Toggle)
+local infjBtn = Instance.new("TextButton")
+infjBtn.Size = UDim2.new(0.4, 0, 0, 40)
+infjBtn.Position = UDim2.new(0.05, 0, 0.1, 0)
+infjBtn.BackgroundColor3 = Color3.fromRGB(70, 70, 90)
+infjBtn.Text = "INFJ (OFF)"
+infjBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+infjBtn.Font = Enum.Font.Gotham
+infjBtn.TextScaled = true
+infjBtn.BorderSizePixel = 0
+infjBtn.Parent = chitFrame
+
+local infjEnabled = false
+local originalJumpPower = Humanoid.JumpPower
+
+infjBtn.MouseButton1Click:Connect(function()
+    infjEnabled = not infjEnabled
+    infjBtn.Text = infjEnabled and "INFJ (ON)" or "INFJ (OFF)"
+    if infjEnabled then
+        Humanoid.JumpPower = 1000  -- Супер прыжок
+        -- Защита от падения в void
+        local connection
+        connection = RunService.Heartbeat:Connect(function()
+            if not infjEnabled then connection:Disconnect(); return end
+            local char = getCharacter()
+            if char and char.PrimaryPart then
+                local pos = char.PrimaryPart.Position
+                if pos.Y < -100 then  -- Если упал слишком низко
+                    char.PrimaryPart.CFrame = CFrame.new(pos.X, 50, pos.Z)
+                end
+            end
+        end)
+    else
+        Humanoid.JumpPower = originalJumpPower
+    end
+end)
+
+-- JUMPB (Toggle с кулдауном)
+local jumpbBtn = Instance.new("TextButton")
+jumpbBtn.Size = UDim2.new(0.4, 0, 0, 40)
+jumpbBtn.Position = UDim2.new(0.55, 0, 0.1, 0)
+jumpbBtn.BackgroundColor3 = Color3.fromRGB(70, 70, 90)
+jumpbBtn.Text = "JUMPB (OFF)"
+jumpbBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+jumpbBtn.Font = Enum.Font.Gotham
+jumpbBtn.TextScaled = true
+jumpbBtn.BorderSizePixel = 0
+jumpbBtn.Parent = chitFrame
+
+local jumpbEnabled = false
+local jumpbCooldown = false
+
+jumpbBtn.MouseButton1Click:Connect(function()
+    if jumpbCooldown then return end
+    jumpbEnabled = not jumpbEnabled
+    jumpbBtn.Text = jumpbEnabled and "JUMPB (ON)" or "JUMPB (OFF)"
+    if jumpbEnabled then
+        -- При каждом прыжке добавляем буст
+        local connection
+        connection = Humanoid.Jumping:Connect(function()
+            if not jumpbEnabled then connection:Disconnect(); return end
+            if Humanoid then
+                Humanoid.JumpPower = 300  -- Буст
+                jumpbCooldown = true
+                jumpbBtn.Text = "JUMPB (CD)"
+                task.wait(3)  -- Кулдаун 3 секунды
+                jumpbCooldown = false
+                if jumpbEnabled then
+                    jumpbBtn.Text = "JUMPB (ON)"
+                else
+                    jumpbBtn.Text = "JUMPB (OFF)"
+                end
+            end
+        end)
+    else
+        -- Отключаем буст
+        Humanoid.JumpPower = originalJumpPower
+    end
+end)
+
+-- ===== ПОДМЕНЮ ESP =====
+
+local espFrame = subFrames["ESP"]
+
+-- ESP Player
+local espPlayerBtn = Instance.new("TextButton")
+espPlayerBtn.Size = UDim2.new(0.4, 0, 0, 40)
+espPlayerBtn.Position = UDim2.new(0.05, 0, 0.1, 0)
+espPlayerBtn.BackgroundColor3 = Color3.fromRGB(70, 70, 90)
+espPlayerBtn.Text = "ESP PLAYER (OFF)"
+espPlayerBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+espPlayerBtn.Font = Enum.Font.Gotham
+espPlayerBtn.TextScaled = true
+espPlayerBtn.BorderSizePixel = 0
+espPlayerBtn.Parent = espFrame
+
+local espPlayerEnabled = false
+local playerHighlights = {}
+
+local function createHighlight(part)
+    local hl = Instance.new("Highlight")
+    hl.FillColor = Color3.fromRGB(150, 150, 150)
+    hl.FillTransparency = 0.5
+    hl.OutlineTransparency = 0.2
+    hl.Parent = part
+    return hl
+end
+
+local function updatePlayerESP()
+    if not espPlayerEnabled then
+        for _, hl in pairs(playerHighlights) do
+            hl:Destroy()
+        end
+        playerHighlights = {}
+        return
+    end
+    -- Добавить всем игрокам (кроме себя)
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer and plr.Character then
+            local char = plr.Character
+            if char and not playerHighlights[plr] then
+                local hl = createHighlight(char)
+                playerHighlights[plr] = hl
+            end
+        end
+    end
+end
+
+espPlayerBtn.MouseButton1Click:Connect(function()
+    espPlayerEnabled = not espPlayerEnabled
+    espPlayerBtn.Text = espPlayerEnabled and "ESP PLAYER (ON)" or "ESP PLAYER (OFF)"
+    updatePlayerESP()
+end)
+
+-- Обновление при добавлении/удалении игроков
+Players.PlayerAdded:Connect(function(plr)
+    if espPlayerEnabled then
+        plr.CharacterAdded:Connect(function(char)
+            if espPlayerEnabled then
+                local hl = createHighlight(char)
+                playerHighlights[plr] = hl
+            end
+        end)
+    end
+end)
+
+Players.PlayerRemoving:Connect(function(plr)
+    if playerHighlights[plr] then
+        playerHighlights[plr]:Destroy()
+        playerHighlights[plr] = nil
+    end
+end)
+
+-- ESP Items
+local espItemsBtn = Instance.new("TextButton")
+espItemsBtn.Size = UDim2.new(0.4, 0, 0, 40)
+espItemsBtn.Position = UDim2.new(0.55, 0, 0.1, 0)
+espItemsBtn.BackgroundColor3 = Color3.fromRGB(70, 70, 90)
+espItemsBtn.Text = "ESP ITEMS (OFF)"
+espItemsBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+espItemsBtn.Font = Enum.Font.Gotham
+espItemsBtn.TextScaled = true
+espItemsBtn.BorderSizePixel = 0
+espItemsBtn.Parent = espFrame
+
+local espItemsEnabled = false
+local itemHighlights = {}
+
+local function isItem(obj)
+    -- Фильтр для предметов: части, не принадлежащие игрокам, и с определёнными признаками
+    if obj:IsA("BasePart") and not obj:IsA("Terrain") then
+        local parent = obj.Parent
+        if parent and parent:IsA("Model") and not parent:IsA("Character") then
+            return true
+        end
+        -- Можно добавить проверку на имя, содержащее "brainrot" или "item"
+        if obj.Name and (string.lower(obj.Name):find("brainrot") or string.lower(obj.Name):find("item")) then
+            return true
+        end
+    end
+    return false
+end
+
+local function scanItems()
+    if not espItemsEnabled then
+        for _, hl in pairs(itemHighlights) do
+            hl:Destroy()
+        end
+        itemHighlights = {}
+        return
+    end
+    -- Удаляем старые, если объект удалён
+    for obj, hl in pairs(itemHighlights) do
+        if not obj.Parent then
+            hl:Destroy()
+            itemHighlights[obj] = nil
+        end
+    end
+    -- Сканируем Workspace
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if isItem(obj) and not itemHighlights[obj] then
+            local hl = createHighlight(obj)
+            itemHighlights[obj] = hl
+        end
+    end
+end
+
+espItemsBtn.MouseButton1Click:Connect(function()
+    espItemsEnabled = not espItemsEnabled
+    espItemsBtn.Text = espItemsEnabled and "ESP ITEMS (ON)" or "ESP ITEMS (OFF)"
+    scanItems()
+end)
+
+-- Периодическое обновление ESP предметов (каждые 2 секунды)
+task.spawn(function()
+    while true do
+        task.wait(2)
+        if espItemsEnabled then
+            scanItems()
+        end
+    end
+end)
+
+-- ===== ПОДМЕНЮ FPSB =====
+
+local fpsbFrame = subFrames["FPSB"]
+
+-- FPS BOOST
+local fpsBoostBtn = Instance.new("TextButton")
+fpsBoostBtn.Size = UDim2.new(0.4, 0, 0, 40)
+fpsBoostBtn.Position = UDim2.new(0.05, 0, 0.1, 0)
+fpsBoostBtn.BackgroundColor3 = Color3.fromRGB(70, 70, 90)
+fpsBoostBtn.Text = "FPS BOOST (OFF)"
+fpsBoostBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+fpsBoostBtn.Font = Enum.Font.Gotham
+fpsBoostBtn.TextScaled = true
+fpsBoostBtn.BorderSizePixel = 0
+fpsBoostBtn.Parent = fpsbFrame
+
+local fpsBoostEnabled = false
+local originalShadows = Lighting.Shadows
+local particleEmitters = {}
+
+local function toggleFPSBoost(state)
+    if state then
+        Lighting.Shadows = false
+        -- Отключаем все ParticleEmitter и Beam
+        for _, obj in ipairs(workspace:GetDescendants()) do
+            if obj:IsA("ParticleEmitter") or obj:IsA("Beam") then
+                table.insert(particleEmitters, obj)
+                obj.Enabled = false
+            end
+        end
+    else
+        Lighting.Shadows = originalShadows
+        for _, obj in ipairs(particleEmitters) do
+            if obj and obj.Parent then
+                obj.Enabled = true
+            end
+        end
+        particleEmitters = {}
+    end
+end
+
+fpsBoostBtn.MouseButton1Click:Connect(function()
+    fpsBoostEnabled = not fpsBoostEnabled
+    fpsBoostBtn.Text = fpsBoostEnabled and "FPS BOOST (ON)" or "FPS BOOST (OFF)"
+    toggleFPSBoost(fpsBoostEnabled)
+end)
+
+-- POTATOES MODE
+local potatoBtn = Instance.new("TextButton")
+potatoBtn.Size = UDim2.new(0.4, 0, 0, 40)
+potatoBtn.Position = UDim2.new(0.55, 0, 0.1, 0)
+potatoBtn.BackgroundColor3 = Color3.fromRGB(70, 70, 90)
+potatoBtn.Text = "POTATOES MODE (OFF)"
+potatoBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+potatoBtn.Font = Enum.Font.Gotham
+potatoBtn.TextScaled = true
+potatoBtn.BorderSizePixel = 0
+potatoBtn.Parent = fpsbFrame
+
+local potatoEnabled = false
+local originalTechnology = Lighting.Technology
+local originalBloom = Lighting.Bloom
+local originalColorCorrection = Lighting.ColorCorrection
+
+local function togglePotato(state)
+    if state then
+        Lighting.Technology = Enum.Technology.Compatibility
+        if Lighting:FindFirstChild("Bloom") then Lighting.Bloom.Enabled = false end
+        if Lighting:FindFirstChild("ColorCorrection") then Lighting.ColorCorrection.Enabled = false end
+        if Lighting:FindFirstChild("SunRays") then Lighting.SunRays.Enabled = false end
+        -- Дополнительно: снижаем качество текстур? Недоступно через API, но можно отключить Atmosphere и т.п.
+        for _, child in ipairs(Lighting:GetChildren()) do
+            if child:IsA("Atmosphere") or child:IsA("Sky") then
+                child.Enabled = false
+            end
+        end
+    else
+        Lighting.Technology = originalTechnology
+        if Lighting:FindFirstChild("Bloom") then Lighting.Bloom.Enabled = true end
+        if Lighting:FindFirstChild("ColorCorrection") then Lighting.ColorCorrection.Enabled = true end
+        if Lighting:FindFirstChild("SunRays") then Lighting.SunRays.Enabled = true end
+        for _, child in ipairs(Lighting:GetChildren()) do
+            if child:IsA("Atmosphere") or child:IsA("Sky") then
+                child.Enabled = true
+            end
+        end
+    end
+end
+
+potatoBtn.MouseButton1Click:Connect(function()
+    potatoEnabled = not potatoEnabled
+    potatoBtn.Text = potatoEnabled and "POTATOES MODE (ON)" or "POTATOES MODE (OFF)"
+    togglePotato(potatoEnabled)
+end)
+
+-- ===== ОБРАБОТКА КЛИКОВ ПО МЕНЮ =====
+
+-- Переключение видимости основного окна при клике на круглую кнопку
+local menuVisible = false
+toggleButton.MouseButton1Click:Connect(function()
+    menuVisible = not menuVisible
+    mainGui.Enabled = menuVisible
+    if menuVisible then
+        -- По умолчанию показываем CHIT
+        for _, frame in pairs(subFrames) do frame.Visible = false end
+        subFrames["CHIT"].Visible = true
+        for name, btn in pairs(menuButtons) do
+            btn.BackgroundColor3 = Color3.fromRGB(60, 60, 80)
+        end
+        menuButtons["CHIT"].BackgroundColor3 = Color3.fromRGB(100, 100, 120)
+    end
+end)
+
+-- Назначение кликов на кнопки подменю
+for name, btn in pairs(menuButtons) do
+    btn.MouseButton1Click:Connect(function()
+        for _, frame in pairs(subFrames) do frame.Visible = false end
+        subFrames[name].Visible = true
+        for _, b in pairs(menuButtons) do
+            b.BackgroundColor3 = Color3.fromRGB(60, 60, 80)
+        end
+        btn.BackgroundColor3 = Color3.fromRGB(100, 100, 120)
+    end)
+end
+
+-- ===== ЗАВЕРШЕНИЕ =====
+
+print("[Delta Brainrot] Скрипт загружен. Нажмите на красную круглую кнопку для открытия меню.")
