@@ -1,0 +1,848 @@
+-- MORN :: 99 NIGHTS ULTIMATE v3
+-- LocalScript в StarterPlayerScripts
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local Lighting = game:GetService("Lighting")
+local Workspace = game:GetService("Workspace")
+local LocalPlayer = Players.LocalPlayer
+local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+local Humanoid = Character:WaitForChild("Humanoid")
+
+-- ===== Безопасные геттеры =====
+local function getChar()
+    return LocalPlayer.Character
+end
+
+local function getHumanoid()
+    local char = getChar()
+    return char and char:FindFirstChild("Humanoid")
+end
+
+local function getRoot()
+    local char = getChar()
+    return char and char:FindFirstChild("HumanoidRootPart")
+end
+
+-- ===== FPS-счётчик (слева вверху) =====
+local fpsLabel = Instance.new("TextLabel")
+fpsLabel.Size = UDim2.new(0, 70, 0, 24)
+fpsLabel.Position = UDim2.new(0, 6, 0, 6)
+fpsLabel.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
+fpsLabel.BackgroundTransparency = 0.5
+fpsLabel.Text = "FPS: 0"
+fpsLabel.TextColor3 = Color3.fromRGB(200, 255, 200)
+fpsLabel.TextSize = 12
+fpsLabel.Font = Enum.Font.GothamBold
+fpsLabel.BorderSizePixel = 0
+fpsLabel.Parent = LocalPlayer:WaitForChild("PlayerGui")
+local fpsCorner = Instance.new("UICorner")
+fpsCorner.CornerRadius = UDim.new(0, 4)
+fpsCorner.Parent = fpsLabel
+
+local frameCount = 0
+local lastTime = tick()
+RunService.Heartbeat:Connect(function()
+    frameCount = frameCount + 1
+    local now = tick()
+    if now - lastTime >= 1 then
+        fpsLabel.Text = "FPS: " .. frameCount
+        frameCount = 0
+        lastTime = now
+    end
+end)
+
+-- ===== GUI =====
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "MornMenu"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+
+-- === Круглая иконка (сворачивание/разворачивание) ===
+local iconFrame = Instance.new("Frame")
+iconFrame.Size = UDim2.new(0, 40, 0, 40)
+iconFrame.Position = UDim2.new(0, 10, 0, 50) -- начальная позиция
+iconFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 60)
+iconFrame.BackgroundTransparency = 0.2
+iconFrame.BorderSizePixel = 0
+iconFrame.Parent = screenGui
+local iconCorner = Instance.new("UICorner")
+iconCorner.CornerRadius = UDim.new(1, 0) -- круг
+iconCorner.Parent = iconFrame
+
+local iconLabel = Instance.new("TextLabel")
+iconLabel.Size = UDim2.new(1, 0, 1, 0)
+iconLabel.BackgroundTransparency = 1
+iconLabel.Text = "M"
+iconLabel.TextColor3 = Color3.fromRGB(200, 200, 255)
+iconLabel.TextSize = 20
+iconLabel.Font = Enum.Font.GothamBold
+iconLabel.Parent = iconFrame
+
+-- Перетаскивание иконки
+local iconDragging = false
+local iconDragInput, iconDragStart, iconStartPos
+iconFrame.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        iconDragging = true
+        iconDragStart = input.Position
+        iconStartPos = iconFrame.Position
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                iconDragging = false
+            end
+        end)
+    end
+end)
+UserInputService.InputChanged:Connect(function(input)
+    if iconDragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+        local delta = input.Position - iconDragStart
+        iconFrame.Position = UDim2.new(
+            iconStartPos.X.Scale,
+            iconStartPos.X.Offset + delta.X,
+            iconStartPos.Y.Scale,
+            iconStartPos.Y.Offset + delta.Y
+        )
+    end
+end)
+
+-- Клик по иконке для показа/скрытия меню
+local menuVisible = true
+iconFrame.MouseButton1Click:Connect(function()
+    menuVisible = not menuVisible
+    mainFrame.Visible = menuVisible
+end)
+
+-- === Основное окно (уменьшенное) ===
+local mainFrame = Instance.new("Frame")
+mainFrame.Size = UDim2.new(0, 250, 0, 380)
+mainFrame.Position = UDim2.new(0.5, -125, 0.5, -190)
+mainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
+mainFrame.BackgroundTransparency = 0.15
+mainFrame.BorderSizePixel = 0
+mainFrame.ClipsDescendants = true
+mainFrame.Visible = true
+mainFrame.Parent = screenGui
+
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(0, 8)
+corner.Parent = mainFrame
+
+-- Заголовок (для перетаскивания основного окна)
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, 0, 0, 28)
+title.Position = UDim2.new(0, 0, 0, 0)
+title.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+title.BackgroundTransparency = 0.2
+title.Text = "MORN :: 99N"
+title.TextColor3 = Color3.fromRGB(200, 200, 255)
+title.TextSize = 13
+title.Font = Enum.Font.GothamBold
+title.TextXAlignment = Enum.TextXAlignment.Left
+title.TextYAlignment = Enum.TextYAlignment.Center
+title.Parent = mainFrame
+
+-- Крестик закрытия (слева)
+local closeBtn = Instance.new("TextButton")
+closeBtn.Size = UDim2.new(0, 24, 0, 24)
+closeBtn.Position = UDim2.new(0, 4, 0, 2)
+closeBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
+closeBtn.BackgroundTransparency = 0
+closeBtn.Text = "✕"
+closeBtn.TextColor3 = Color3.fromRGB(255, 100, 100)
+closeBtn.TextSize = 14
+closeBtn.Font = Enum.Font.GothamBold
+closeBtn.BorderSizePixel = 0
+closeBtn.Parent = mainFrame
+local closeCorner = Instance.new("UICorner")
+closeCorner.CornerRadius = UDim.new(0, 4)
+closeCorner.Parent = closeBtn
+closeBtn.MouseButton1Click:Connect(function()
+    menuVisible = false
+    mainFrame.Visible = false
+end)
+
+-- Перетаскивание основного окна
+local mainDragging = false
+local mainDragInput, mainDragStart, mainStartPos
+title.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        mainDragging = true
+        mainDragStart = input.Position
+        mainStartPos = mainFrame.Position
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                mainDragging = false
+            end
+        end)
+    end
+end)
+UserInputService.InputChanged:Connect(function(input)
+    if mainDragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+        local delta = input.Position - mainDragStart
+        mainFrame.Position = UDim2.new(
+            mainStartPos.X.Scale,
+            mainStartPos.X.Offset + delta.X,
+            mainStartPos.Y.Scale,
+            mainStartPos.Y.Offset + delta.Y
+        )
+    end
+end)
+
+-- ScrollingFrame для кнопок
+local scrollFrame = Instance.new("ScrollingFrame")
+scrollFrame.Size = UDim2.new(1, -8, 1, -34)
+scrollFrame.Position = UDim2.new(0, 4, 0, 30)
+scrollFrame.BackgroundColor3 = Color3.fromRGB(35, 35, 40)
+scrollFrame.BackgroundTransparency = 0.5
+scrollFrame.BorderSizePixel = 0
+scrollFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+scrollFrame.ScrollBarThickness = 4
+scrollFrame.ScrollBarImageColor3 = Color3.fromRGB(80, 80, 120)
+scrollFrame.Parent = mainFrame
+local scrollCorner = Instance.new("UICorner")
+scrollCorner.CornerRadius = UDim.new(0, 6)
+scrollCorner.Parent = scrollFrame
+
+-- ===== Создание кнопки (маленькой) =====
+local function createButton(parent, text, position, color, toggleFunc, isToggle)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(0, 105, 0, 22)
+    btn.Position = position
+    btn.BackgroundColor3 = color or Color3.fromRGB(60, 60, 80)
+    btn.BackgroundTransparency = 0.3
+    btn.Text = text
+    btn.TextColor3 = Color3.fromRGB(230, 230, 250)
+    btn.TextSize = 10
+    btn.Font = Enum.Font.Gotham
+    btn.BorderSizePixel = 0
+    btn.AutoButtonColor = false
+    btn.Parent = parent
+    local btnCorner = Instance.new("UICorner")
+    btnCorner.CornerRadius = UDim.new(0, 4)
+    btnCorner.Parent = btn
+
+    local state = false
+    local defaultColor = color or Color3.fromRGB(60, 60, 80)
+    local activeColor = Color3.fromRGB(100, 200, 100)
+
+    btn.MouseEnter:Connect(function()
+        TweenService:Create(btn, TweenInfo.new(0.15), {BackgroundTransparency = 0.1}):Play()
+    end)
+    btn.MouseLeave:Connect(function()
+        TweenService:Create(btn, TweenInfo.new(0.15), {BackgroundTransparency = 0.3}):Play()
+    end)
+
+    btn.MouseButton1Click:Connect(function()
+        if isToggle then
+            state = not state
+            if state then
+                btn.Text = text .. " ON"
+                btn.BackgroundColor3 = activeColor
+            else
+                btn.Text = text .. " OFF"
+                btn.BackgroundColor3 = defaultColor
+            end
+        end
+        toggleFunc(state)
+    end)
+
+    if isToggle then
+        btn.Text = text .. " OFF"
+    end
+    return btn
+end
+
+-- ===== Состояния =====
+local states = {
+    INFJUMP = false,
+    JUMPBOOST = false,
+    FLY = false,
+    GODMOD = false,
+    NOHUNGER = false,
+    ESP = false,
+    AUTOHEEL = false,
+    AUTOFARM = false,
+    NOFALL = false,
+    INFSTAM = false,
+    NIGHTVISION = false,
+    FREECAM = false,
+    PRDAY = false,
+}
+
+-- ===== Реализации функций =====
+
+-- INFJUMP (высокий прыжок с импульсом)
+local infJumpConnection = nil
+local function toggleInfJump(state)
+    states.INFJUMP = state
+    if state then
+        if not infJumpConnection then
+            infJumpConnection = UserInputService.InputBegan:Connect(function(input, processed)
+                if processed then return end
+                if input.KeyCode == Enum.KeyCode.Space then
+                    local root = getRoot()
+                    if not root then return end
+                    local bv = Instance.new("BodyVelocity")
+                    bv.Velocity = Vector3.new(0, 200, 0) -- высота
+                    bv.MaxForce = Vector3.new(0, 100000, 0)
+                    bv.Parent = root
+                    task.wait(0.15)
+                    bv:Destroy()
+                end
+            end)
+        end
+    else
+        if infJumpConnection then
+            infJumpConnection:Disconnect()
+            infJumpConnection = nil
+        end
+    end
+end
+
+-- JUMPBOOST
+local function toggleJumpBoost(state)
+    states.JUMPBOOST = state
+    local hum = getHumanoid()
+    if hum then
+        hum.JumpPower = state and 120 or 50
+    end
+end
+
+-- TPFIRE
+local function tpFire()
+    local root = getRoot()
+    if not root then return end
+    for _, obj in ipairs(Workspace:GetDescendants()) do
+        if obj:IsA("BasePart") and (obj.Name:lower():find("fire") or obj.Name:lower():find("save")) then
+            root.CFrame = obj.CFrame + Vector3.new(0, 3, 0)
+            return
+        end
+    end
+    root.CFrame = CFrame.new(0, 20, 0)
+end
+
+-- FLY (с управлением)
+local flyEnabled = false
+local flyBodyVelocity = nil
+local flySpeed = 50
+local flyConnection = nil
+local function toggleFly(state)
+    states.FLY = state
+    if state then
+        local root = getRoot()
+        if not root then return end
+        if flyBodyVelocity then flyBodyVelocity:Destroy() end
+        flyBodyVelocity = Instance.new("BodyVelocity")
+        flyBodyVelocity.Velocity = Vector3.new(0, 0, 0)
+        flyBodyVelocity.MaxForce = Vector3.new(100000, 100000, 100000)
+        flyBodyVelocity.Parent = root
+        flyEnabled = true
+        if not flyConnection then
+            flyConnection = RunService.Heartbeat:Connect(function()
+                if not flyEnabled or not flyBodyVelocity then return end
+                local root = getRoot()
+                if not root then return end
+                local direction = Vector3.new(0, 0, 0)
+                if UserInputService:IsKeyDown(Enum.KeyCode.W) then direction = direction + root.CFrame.LookVector * flySpeed end
+                if UserInputService:IsKeyDown(Enum.KeyCode.S) then direction = direction - root.CFrame.LookVector * flySpeed end
+                if UserInputService:IsKeyDown(Enum.KeyCode.A) then direction = direction - root.CFrame.RightVector * flySpeed end
+                if UserInputService:IsKeyDown(Enum.KeyCode.D) then direction = direction + root.CFrame.RightVector * flySpeed end
+                if UserInputService:IsKeyDown(Enum.KeyCode.Space) then direction = direction + Vector3.new(0, flySpeed, 0) end
+                if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then direction = direction + Vector3.new(0, -flySpeed, 0) end
+                flyBodyVelocity.Velocity = direction
+            end)
+        end
+    else
+        flyEnabled = false
+        if flyBodyVelocity then flyBodyVelocity:Destroy() flyBodyVelocity = nil end
+        if flyConnection then flyConnection:Disconnect() flyConnection = nil end
+    end
+end
+
+-- TPTREE
+local function tpTree()
+    local root = getRoot()
+    if not root then return end
+    for _, obj in ipairs(Workspace:GetDescendants()) do
+        if obj:IsA("BasePart") and (obj.Name:lower():find("wood") or obj.Name:lower():find("board") or obj.Name:lower():find("tree")) then
+            obj.CFrame = root.CFrame + Vector3.new(math.random(-5,5), 0, math.random(-5,5))
+        end
+    end
+end
+
+-- TPFOOD
+local function tpFood()
+    local root = getRoot()
+    if not root then return end
+    for _, obj in ipairs(Workspace:GetDescendants()) do
+        if obj:IsA("BasePart") and (obj.Name:lower():find("food") or obj.Name:lower():find("berry") or obj.Name:lower():find("meat")) then
+            obj.CFrame = root.CFrame + Vector3.new(math.random(-5,5), 1, math.random(-5,5))
+        end
+    end
+end
+
+-- TPFUEL
+local function tpFuel()
+    local root = getRoot()
+    if not root then return end
+    for _, obj in ipairs(Workspace:GetDescendants()) do
+        if obj:IsA("BasePart") and (obj.Name:lower():find("fuel") or obj.Name:lower():find("gas") or obj.Name:lower():find("oil")) then
+            obj.CFrame = root.CFrame + Vector3.new(math.random(-5,5), 0, math.random(-5,5))
+        end
+    end
+end
+
+-- TPBONDAGE
+local function tpBondage()
+    local root = getRoot()
+    if not root then return end
+    for _, obj in ipairs(Workspace:GetDescendants()) do
+        if obj:IsA("BasePart") and (obj.Name:lower():find("bandage") or obj.Name:lower():find("medic") or obj.Name:lower():find("heal")) then
+            obj.CFrame = root.CFrame + Vector3.new(math.random(-5,5), 1, math.random(-5,5))
+        end
+    end
+end
+
+-- TPGUN
+local function tpGun()
+    local root = getRoot()
+    if not root then return end
+    local weapons = {"spear", "pistol", "sack", "axe", "sword"}
+    for _, obj in ipairs(Workspace:GetDescendants()) do
+        if obj:IsA("BasePart") then
+            local name = obj.Name:lower()
+            for _, w in ipairs(weapons) do
+                if name:find(w) then
+                    obj.CFrame = root.CFrame + Vector3.new(math.random(-5,5), 0, math.random(-5,5))
+                    break
+                end
+            end
+        end
+    end
+end
+
+-- TPPLAYERS (меню)
+local playerMenu = nil
+local function showPlayerMenu()
+    if playerMenu then playerMenu:Destroy() end
+    playerMenu = Instance.new("Frame")
+    playerMenu.Size = UDim2.new(0, 160, 0, 200)
+    playerMenu.Position = UDim2.new(0.5, -80, 0.5, -100)
+    playerMenu.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+    playerMenu.BackgroundTransparency = 0.2
+    playerMenu.BorderSizePixel = 0
+    playerMenu.Parent = screenGui
+    local mCorner = Instance.new("UICorner")
+    mCorner.CornerRadius = UDim.new(0, 8)
+    mCorner.Parent = playerMenu
+
+    local mTitle = Instance.new("TextLabel")
+    mTitle.Size = UDim2.new(1, 0, 0, 24)
+    mTitle.Text = "Игроки"
+    mTitle.TextColor3 = Color3.fromRGB(255,255,255)
+    mTitle.TextSize = 12
+    mTitle.Font = Enum.Font.GothamBold
+    mTitle.BackgroundTransparency = 1
+    mTitle.Parent = playerMenu
+
+    local mScroll = Instance.new("ScrollingFrame")
+    mScroll.Size = UDim2.new(1, -6, 1, -30)
+    mScroll.Position = UDim2.new(0, 3, 0, 26)
+    mScroll.BackgroundTransparency = 1
+    mScroll.BorderSizePixel = 0
+    mScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+    mScroll.Parent = playerMenu
+
+    local yOffset = 0
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer then
+            local btn = Instance.new("TextButton")
+            btn.Size = UDim2.new(1, 0, 0, 24)
+            btn.Position = UDim2.new(0, 0, 0, yOffset)
+            btn.BackgroundColor3 = Color3.fromRGB(60, 60, 80)
+            btn.BackgroundTransparency = 0.3
+            btn.Text = plr.Name
+            btn.TextColor3 = Color3.fromRGB(230,230,250)
+            btn.TextSize = 11
+            btn.Font = Enum.Font.Gotham
+            btn.BorderSizePixel = 0
+            btn.Parent = mScroll
+            local btnCorner = Instance.new("UICorner")
+            btnCorner.CornerRadius = UDim.new(0, 4)
+            btnCorner.Parent = btn
+            btn.MouseButton1Click:Connect(function()
+                local root = getRoot()
+                if not root then return end
+                local targetChar = plr.Character
+                if targetChar then
+                    local targetRoot = targetChar:FindFirstChild("HumanoidRootPart")
+                    if targetRoot then
+                        root.CFrame = targetRoot.CFrame + Vector3.new(0, 3, 0)
+                    end
+                end
+                playerMenu:Destroy()
+                playerMenu = nil
+            end)
+            yOffset = yOffset + 28
+        end
+    end
+    mScroll.CanvasSize = UDim2.new(0, 0, 0, yOffset)
+    local closeM = Instance.new("TextButton")
+    closeM.Size = UDim2.new(0, 24, 0, 24)
+    closeM.Position = UDim2.new(1, -28, 0, 1)
+    closeM.BackgroundColor3 = Color3.fromRGB(60,60,70)
+    closeM.Text = "✕"
+    closeM.TextColor3 = Color3.fromRGB(255,100,100)
+    closeM.TextSize = 12
+    closeM.Font = Enum.Font.GothamBold
+    closeM.BorderSizePixel = 0
+    closeM.Parent = playerMenu
+    local closeMCorner = Instance.new("UICorner")
+    closeMCorner.CornerRadius = UDim.new(0, 4)
+    closeMCorner.Parent = closeM
+    closeM.MouseButton1Click:Connect(function()
+        playerMenu:Destroy()
+        playerMenu = nil
+    end)
+end
+
+-- TPPLAYERSME
+local function tpPlayersMe()
+    local root = getRoot()
+    if not root then return end
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer then
+            local targetChar = plr.Character
+            if targetChar then
+                local targetRoot = targetChar:FindFirstChild("HumanoidRootPart")
+                if targetRoot then
+                    targetRoot.CFrame = root.CFrame + Vector3.new(math.random(-3,3), 0, math.random(-3,3))
+                end
+            end
+        end
+    end
+end
+
+-- AUTOHEEL
+local autoHeelConnection = nil
+local function toggleAutoHeel(state)
+    states.AUTOHEEL = state
+    if state then
+        if not autoHeelConnection then
+            autoHeelConnection = RunService.Heartbeat:Connect(function()
+                local hum = getHumanoid()
+                if hum then hum.Health = hum.MaxHealth end
+            end)
+        end
+    else
+        if autoHeelConnection then
+            autoHeelConnection:Disconnect()
+            autoHeelConnection = nil
+        end
+    end
+end
+
+-- GODMOD (регенерация здоровья и защита)
+local godModeConnection = nil
+local function toggleGodMode(state)
+    states.GODMOD = state
+    if state then
+        if not godModeConnection then
+            godModeConnection = RunService.Heartbeat:Connect(function()
+                local hum = getHumanoid()
+                if hum then hum.Health = hum.MaxHealth end
+            end)
+        end
+    else
+        if godModeConnection then
+            godModeConnection:Disconnect()
+            godModeConnection = nil
+        end
+    end
+end
+
+-- NOHUNGER
+local hungerConnection = nil
+local function toggleNoHunger(state)
+    states.NOHUNGER = state
+    local hunger = LocalPlayer:FindFirstChild("Hunger") or LocalPlayer:FindFirstChild("Food") or LocalPlayer:FindFirstChild("Stamina")
+    if hunger then
+        if state and not hungerConnection then
+            hungerConnection = hunger.Changed:Connect(function()
+                if states.NOHUNGER and hunger then hunger.Value = hunger.Value end
+            end)
+        elseif not state and hungerConnection then
+            hungerConnection:Disconnect()
+            hungerConnection = nil
+        end
+    end
+end
+
+-- ESP
+local espHighlights = {}
+local espConnection = nil
+local function toggleESP(state)
+    states.ESP = state
+    if state then
+        for _, h in pairs(espHighlights) do h:Destroy() end
+        espHighlights = {}
+        local function updateESP()
+            for _, plr in ipairs(Players:GetPlayers()) do
+                if plr ~= LocalPlayer then
+                    local char = plr.Character
+                    if char then
+                        if not espHighlights[plr] then
+                            local hl = Instance.new("Highlight")
+                            hl.Adornee = char
+                            hl.FillColor = Color3.fromRGB(0, 255, 0)
+                            hl.FillTransparency = 0.5
+                            hl.OutlineColor = Color3.fromRGB(0, 255, 0)
+                            hl.OutlineTransparency = 0.3
+                            hl.Parent = char
+                            espHighlights[plr] = hl
+                        end
+                    else
+                        if espHighlights[plr] then
+                            espHighlights[plr]:Destroy()
+                            espHighlights[plr] = nil
+                        end
+                    end
+                end
+            end
+            for _, obj in ipairs(Workspace:GetDescendants()) do
+                if obj:IsA("Model") and obj:FindFirstChild("Humanoid") and obj ~= LocalPlayer.Character and not Players:GetPlayerFromCharacter(obj) then
+                    if not espHighlights[obj] then
+                        local hl = Instance.new("Highlight")
+                        hl.Adornee = obj
+                        hl.FillColor = Color3.fromRGB(0, 255, 0)
+                        hl.FillTransparency = 0.5
+                        hl.OutlineColor = Color3.fromRGB(0, 255, 0)
+                        hl.OutlineTransparency = 0.3
+                        hl.Parent = obj
+                        espHighlights[obj] = hl
+                    end
+                end
+            end
+        end
+        updateESP()
+        if not espConnection then
+            espConnection = RunService.Heartbeat:Connect(updateESP)
+        end
+    else
+        if espConnection then espConnection:Disconnect() espConnection = nil end
+        for _, h in pairs(espHighlights) do h:Destroy() end
+        espHighlights = {}
+    end
+end
+
+-- SPEED
+local function promptSpeed()
+    local inputBox = Instance.new("TextBox")
+    inputBox.Size = UDim2.new(0, 160, 0, 24)
+    inputBox.Position = UDim2.new(0.5, -80, 0.5, -12)
+    inputBox.BackgroundColor3 = Color3.fromRGB(50,50,60)
+    inputBox.TextColor3 = Color3.fromRGB(255,255,255)
+    inputBox.Font = Enum.Font.Gotham
+    inputBox.TextSize = 13
+    inputBox.PlaceholderText = "Скорость (15-500)"
+    inputBox.Parent = screenGui
+    local cornerBox = Instance.new("UICorner")
+    cornerBox.CornerRadius = UDim.new(0, 4)
+    cornerBox.Parent = inputBox
+    inputBox.FocusLost:Connect(function(enter)
+        if enter then
+            local speed = tonumber(inputBox.Text)
+            if speed and speed >= 15 and speed <= 500 then
+                local hum = getHumanoid()
+                if hum then hum.WalkSpeed = speed end
+            end
+            inputBox:Destroy()
+        end
+    end)
+end
+
+-- ===== НОВЫЕ ФУНКЦИИ =====
+
+-- AUTOFARM (автосбор ресурсов каждые 5 секунд)
+local autoFarmConnection = nil
+local function toggleAutoFarm(state)
+    states.AUTOFARM = state
+    if state then
+        if not autoFarmConnection then
+            autoFarmConnection = RunService.Heartbeat:Connect(function()
+                if not states.AUTOFARM then return end
+                -- собираем деревья и еду
+                tpTree()
+                tpFood()
+                -- можно добавить сбор других ресурсов
+            end)
+        end
+    else
+        if autoFarmConnection then
+            autoFarmConnection:Disconnect()
+            autoFarmConnection = nil
+        end
+    end
+end
+
+-- NOFALLDAMAGE (отключение урона от падения)
+local function toggleNoFall(state)
+    states.NOFALL = state
+    local hum = getHumanoid()
+    if hum then
+        hum.FallDamage = state and 0 or 1 -- 1 - стандарт, 0 - отключен
+    end
+end
+
+-- INFINITESTAMINA (заморозка стамины)
+local staminaConnection = nil
+local function toggleInfiniteStamina(state)
+    states.INFSTAM = state
+    local stamina = LocalPlayer:FindFirstChild("Stamina") or LocalPlayer:FindFirstChild("Energy")
+    if stamina then
+        if state and not staminaConnection then
+            staminaConnection = stamina.Changed:Connect(function()
+                if states.INFSTAM and stamina then stamina.Value = stamina.Value end
+            end)
+        elseif not state and staminaConnection then
+            staminaConnection:Disconnect()
+            staminaConnection = nil
+        end
+    end
+end
+
+-- NIGHTVISION (увеличение яркости)
+local function toggleNightVision(state)
+    states.NIGHTVISION = state
+    if state then
+        Lighting.Brightness = 3
+        Lighting.Ambient = Color3.fromRGB(200, 200, 200)
+    else
+        Lighting.Brightness = 1
+        Lighting.Ambient = Color3.fromRGB(127, 127, 127)
+    end
+end
+
+-- TELEPORTTOCHEST (телепорт к сундуку)
+local function tpChest()
+    local root = getRoot()
+    if not root then return end
+    for _, obj in ipairs(Workspace:GetDescendants()) do
+        if obj:IsA("BasePart") and (obj.Name:lower():find("chest") or obj.Name:lower():find("box")) then
+            root.CFrame = obj.CFrame + Vector3.new(0, 2, 0)
+            return
+        end
+    end
+end
+
+-- FREECAM (свободная камера)
+local freeCamEnabled = false
+local freeCamConnection = nil
+local function toggleFreeCam(state)
+    states.FREECAM = state
+    local camera = Workspace.CurrentCamera
+    if state then
+        -- отключаем привязку к персонажу
+        camera.CameraType = Enum.CameraType.Scriptable
+        -- позиционируем камеру над персонажем
+        local root = getRoot()
+        if root then
+            camera.CFrame = root.CFrame + Vector3.new(0, 10, 20)
+        end
+        -- управление камерой через WASD? Для простоты оставим статичной.
+        if not freeCamConnection then
+            freeCamConnection = RunService.Heartbeat:Connect(function()
+                if not states.FREECAM then return end
+                -- можно двигать камеру кнопками, но для простоты оставим как есть
+            end)
+        end
+    else
+        camera.CameraType = Enum.CameraType.Custom
+        if freeCamConnection then
+            freeCamConnection:Disconnect()
+            freeCamConnection = nil
+        end
+    end
+end
+
+-- PRDAY (пропуск дня, установка времени на день)
+local function togglePRDay(state)
+    states.PRDAY = state
+    if state then
+        -- устанавливаем время 12:00 (день)
+        Lighting.ClockTime = 12
+        -- можно также ускорить время, но просто установим
+    end
+end
+
+-- ===== Кнопки =====
+local buttonData = {
+    {"INFJUMP", toggleInfJump, Color3.fromRGB(80,80,150), true},
+    {"JUMPBOOST", toggleJumpBoost, Color3.fromRGB(80,150,80), true},
+    {"TPFIRE", tpFire, Color3.fromRGB(200,100,50), false},
+    {"FLY", toggleFly, Color3.fromRGB(100,150,200), true},
+    {"TPTREE", tpTree, Color3.fromRGB(100,80,60), false},
+    {"TPFOOD", tpFood, Color3.fromRGB(200,150,50), false},
+    {"TPFUEL", tpFuel, Color3.fromRGB(150,100,50), false},
+    {"TPBONDAGE", tpBondage, Color3.fromRGB(200,80,80), false},
+    {"TPGUN", tpGun, Color3.fromRGB(120,120,120), false},
+    {"TPPLAYERS", showPlayerMenu, Color3.fromRGB(60,100,200), false},
+    {"TPPLAYERSME", tpPlayersMe, Color3.fromRGB(200,60,200), false},
+    {"AUTOHEEL", toggleAutoHeel, Color3.fromRGB(50,200,50), true},
+    {"GODMOD", toggleGodMode, Color3.fromRGB(200,50,50), true},
+    {"NOHUNGER", toggleNoHunger, Color3.fromRGB(200,200,50), true},
+    {"ESP", toggleESP, Color3.fromRGB(50,200,200), true},
+    {"SPEED", promptSpeed, Color3.fromRGB(150,150,200), false},
+    -- Новые
+    {"AUTOFARM", toggleAutoFarm, Color3.fromRGB(255,165,0), true},
+    {"NOFALL", toggleNoFall, Color3.fromRGB(0,200,255), true},
+    {"INFSTAM", toggleInfiniteStamina, Color3.fromRGB(255,0,255), true},
+    {"NIGHTVISION", toggleNightVision, Color3.fromRGB(255,255,0), true},
+    {"TPCHEST", tpChest, Color3.fromRGB(139,69,19), false},
+    {"FREECAM", toggleFreeCam, Color3.fromRGB(0,150,255), true},
+    {"PRDAY", togglePRDay, Color3.fromRGB(255,215,0), false},
+}
+
+-- Размещение в сетке (2 колонки)
+local cols = 2
+local btnWidth = 105
+local btnHeight = 22
+local gapX = 4
+local gapY = 4
+local startX = 4
+local startY = 4
+
+for i, data in ipairs(buttonData) do
+    local text = data[1]
+    local func = data[2]
+    local color = data[3]
+    local isToggle = data[4]
+    local row = math.floor((i-1) / cols)
+    local col = (i-1) % cols
+    local x = startX + col * (btnWidth + gapX)
+    local y = startY + row * (btnHeight + gapY)
+    createButton(scrollFrame, text, UDim2.new(0, x, 0, y), color, func, isToggle)
+end
+
+local rows = math.ceil(#buttonData / cols)
+local totalHeight = startY + rows * (btnHeight + gapY) + 10
+scrollFrame.CanvasSize = UDim2.new(0, 0, 0, totalHeight)
+
+-- ===== Сброс при респавне =====
+LocalPlayer.CharacterAdded:Connect(function(newChar)
+    Character = newChar
+    Humanoid = newChar:WaitForChild("Humanoid")
+    -- Отключаем активные состояния, зависящие от персонажа
+    if states.FLY then toggleFly(false) end
+    if states.GODMOD then toggleGodMode(false) end
+    if states.AUTOHEEL then toggleAutoHeel(false) end
+    if states.ESP then toggleESP(false) end
+    if states.NOFALL then toggleNoFall(false) end
+    if states.FREECAM then toggleFreeCam(false) end
+    -- Другие состояния не требуют сброса
+end)
+
+print("MORN :: 99 NIGHTS ULTIMATE v3 loaded.")
