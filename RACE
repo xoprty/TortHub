@@ -1,0 +1,126 @@
+-- Скрипт для Delta (Roblox) — Race Clicker
+-- Меню с функциями Speed и ZTrade (автопринятие трейда)
+
+local player = game.Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+local humanoid = character:WaitForChild("Humanoid")
+
+-- ===== СОЗДАНИЕ GUI =====
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "RaceClickerMenu"
+screenGui.Parent = player:WaitForChild("PlayerGui")
+
+local frame = Instance.new("Frame")
+frame.Size = UDim2.new(0, 260, 0, 160)
+frame.Position = UDim2.new(0.5, -130, 0.5, -80)
+frame.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+frame.BackgroundTransparency = 0.15
+frame.BorderSizePixel = 0
+frame.Parent = screenGui
+
+-- Заголовок (опционально)
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, 0, 0, 25)
+title.Position = UDim2.new(0, 0, 0, 0)
+title.BackgroundTransparency = 1
+title.Text = "RACE CLICKER"
+title.TextColor3 = Color3.fromRGB(200, 200, 255)
+title.TextScaled = true
+title.Font = Enum.Font.GothamBold
+title.Parent = frame
+
+-- Крестик (закрыть)
+local closeBtn = Instance.new("ImageButton")
+closeBtn.Size = UDim2.new(0, 22, 0, 22)
+closeBtn.Position = UDim2.new(1, -28, 0, 4)
+closeBtn.BackgroundColor3 = Color3.fromRGB(255, 70, 70)
+closeBtn.Image = "rbxassetid://7071696335"  -- стандартный значок крестика
+closeBtn.Parent = frame
+closeBtn.MouseButton1Click:Connect(function()
+    screenGui:Destroy()
+end)
+
+-- ===== КНОПКА SPEED =====
+local speedBtn = Instance.new("TextButton")
+speedBtn.Size = UDim2.new(0, 120, 0, 35)
+speedBtn.Position = UDim2.new(0.5, -60, 0.35, 0)
+speedBtn.Text = "Speed (500)"
+speedBtn.BackgroundColor3 = Color3.fromRGB(60, 70, 90)
+speedBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+speedBtn.BorderSizePixel = 0
+speedBtn.Parent = frame
+
+speedBtn.MouseButton1Click:Connect(function()
+    if humanoid then
+        humanoid.WalkSpeed = 500
+        humanoid.JumpPower = 200            -- чтобы компенсировать рывки
+        -- Дополнительно можно отключить авто-поворот, если мешает
+        -- humanoid.AutoRotate = false
+        print("[Morn] Speed установлена на 500")
+    end
+end)
+
+-- ===== КНОПКА ZTRADE =====
+local ztradeBtn = Instance.new("TextButton")
+ztradeBtn.Size = UDim2.new(0, 120, 0, 35)
+ztradeBtn.Position = UDim2.new(0.5, -60, 0.7, 0)
+ztradeBtn.Text = "ZTrade (вкл)"
+ztradeBtn.BackgroundColor3 = Color3.fromRGB(60, 70, 90)
+ztradeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+ztradeBtn.BorderSizePixel = 0
+ztradeBtn.Parent = frame
+
+local ztradeActive = false
+local ztradeConnection
+
+local function findAcceptButton(gui)
+    -- Рекурсивный поиск кнопки с текстом "Принять" или "Accept"
+    for _, child in ipairs(gui:GetDescendants()) do
+        if child:IsA("TextButton") then
+            local txt = child.Text:lower()
+            if txt:find("принять") or txt:find("accept") then
+                return child
+            end
+        end
+    end
+    return nil
+end
+
+ztradeBtn.MouseButton1Click:Connect(function()
+    ztradeActive = not ztradeActive
+    if ztradeActive then
+        ztradeBtn.Text = "ZTrade (выкл)"
+        ztradeBtn.BackgroundColor3 = Color3.fromRGB(0, 150, 0)
+        if ztradeConnection then ztradeConnection:Disconnect() end
+        ztradeConnection = game:GetService("RunService").RenderStepped:Connect(function()
+            -- Ищем любой GUI, который может быть окном трейда
+            for _, gui in ipairs(player.PlayerGui:GetChildren()) do
+                if gui:IsA("ScreenGui") then
+                    local acceptBtn = findAcceptButton(gui)
+                    if acceptBtn and acceptBtn.Visible and acceptBtn.Active then
+                        -- Имитация клика (безопасно)
+                        pcall(function()
+                            acceptBtn.MouseButton1Click:Fire()
+                        end)
+                        -- Можно также использовать acceptBtn:Click() если доступно
+                    end
+                end
+            end
+        end)
+    else
+        ztradeBtn.Text = "ZTrade (вкл)"
+        ztradeBtn.BackgroundColor3 = Color3.fromRGB(60, 70, 90)
+        if ztradeConnection then
+            ztradeConnection:Disconnect()
+            ztradeConnection = nil
+        end
+    end
+end)
+
+-- Обновляем ссылку на персонажа при респавне
+player.CharacterAdded:Connect(function(newChar)
+    character = newChar
+    humanoid = character:WaitForChild("Humanoid")
+end)
+
+print("[Morn] Меню загружено. Speed — установка 500, ZTrade — автопринятие трейда.")
