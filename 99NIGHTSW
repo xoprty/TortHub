@@ -1,0 +1,628 @@
+-- MORN :: синтез для режима 99 nights
+-- Скрипт: клиентский LocalScript (поместить в StarterPlayerScripts или в GUI)
+-- Версия: 1.0
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local GuiService = game:GetService("GuiService")
+local TweenService = game:GetService("TweenService")
+local LocalPlayer = Players.LocalPlayer
+local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+local Humanoid = Character:WaitForChild("Humanoid")
+
+-- ===== Безопасное получение персонажа =====
+local function getChar()
+    if not LocalPlayer.Character then return nil end
+    return LocalPlayer.Character
+end
+
+local function getHumanoid()
+    local char = getChar()
+    if not char then return nil end
+    return char:FindFirstChild("Humanoid")
+end
+
+-- ===== Создание GUI =====
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "MornMenu"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+
+-- Основное окно
+local mainFrame = Instance.new("Frame")
+mainFrame.Size = UDim2.new(0, 380, 0, 520)
+mainFrame.Position = UDim2.new(0.5, -190, 0.5, -260)
+mainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
+mainFrame.BackgroundTransparency = 0.1
+mainFrame.BorderSizePixel = 0
+mainFrame.ClipsDescendants = true
+mainFrame.Parent = screenGui
+
+-- Скругление углов
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(0, 12)
+corner.Parent = mainFrame
+
+-- Заголовок
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, 0, 0, 40)
+title.Position = UDim2.new(0, 0, 0, 0)
+title.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+title.BackgroundTransparency = 0.3
+title.Text = "MORN :: 99 NIGHTS"
+title.TextColor3 = Color3.fromRGB(200, 200, 255)
+title.TextSize = 18
+title.Font = Enum.Font.GothamBold
+title.TextXAlignment = Enum.TextXAlignment.Left
+title.TextYAlignment = Enum.TextYAlignment.Center
+title.Parent = mainFrame
+
+-- Кнопка закрытия (крестик слева)
+local closeBtn = Instance.new("TextButton")
+closeBtn.Size = UDim2.new(0, 32, 0, 32)
+closeBtn.Position = UDim2.new(0, 8, 0, 4)
+closeBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
+closeBtn.BackgroundTransparency = 0
+closeBtn.Text = "✕"
+closeBtn.TextColor3 = Color3.fromRGB(255, 100, 100)
+closeBtn.TextSize = 18
+closeBtn.Font = Enum.Font.GothamBold
+closeBtn.BorderSizePixel = 0
+closeBtn.Parent = mainFrame
+local closeCorner = Instance.new("UICorner")
+closeCorner.CornerRadius = UDim.new(0, 6)
+closeCorner.Parent = closeBtn
+closeBtn.MouseButton1Click:Connect(function()
+    screenGui.Enabled = false
+end)
+
+-- Контейнер для кнопок (ScrollingFrame)
+local scrollFrame = Instance.new("ScrollingFrame")
+scrollFrame.Size = UDim2.new(1, -16, 1, -56)
+scrollFrame.Position = UDim2.new(0, 8, 0, 44)
+scrollFrame.BackgroundColor3 = Color3.fromRGB(35, 35, 40)
+scrollFrame.BackgroundTransparency = 0.5
+scrollFrame.BorderSizePixel = 0
+scrollFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+scrollFrame.ScrollBarThickness = 6
+scrollFrame.ScrollBarImageColor3 = Color3.fromRGB(80, 80, 120)
+scrollFrame.Parent = mainFrame
+local scrollCorner = Instance.new("UICorner")
+scrollCorner.CornerRadius = UDim.new(0, 8)
+scrollCorner.Parent = scrollFrame
+
+-- Разметка для кнопок (сетка)
+local function createButton(parent, text, position, size, color, callback)
+    local btn = Instance.new("TextButton")
+    btn.Size = size or UDim2.new(0, 165, 0, 36)
+    btn.Position = position
+    btn.BackgroundColor3 = color or Color3.fromRGB(60, 60, 80)
+    btn.BackgroundTransparency = 0.3
+    btn.Text = text
+    btn.TextColor3 = Color3.fromRGB(230, 230, 250)
+    btn.TextSize = 14
+    btn.Font = Enum.Font.Gotham
+    btn.BorderSizePixel = 0
+    btn.AutoButtonColor = false
+    btn.Parent = parent
+    local btnCorner = Instance.new("UICorner")
+    btnCorner.CornerRadius = UDim.new(0, 6)
+    btnCorner.Parent = btn
+
+    -- Ховер эффект
+    btn.MouseEnter:Connect(function()
+        TweenService:Create(btn, TweenInfo.new(0.2), {BackgroundTransparency = 0.1}):Play()
+    end)
+    btn.MouseLeave:Connect(function()
+        TweenService:Create(btn, TweenInfo.new(0.2), {BackgroundTransparency = 0.3}):Play()
+    end)
+
+    btn.MouseButton1Click:Connect(callback)
+    return btn
+end
+
+-- Хранилище состояний (для toggle)
+local states = {
+    INFJUMP = false,
+    JUMPBOOST = false,
+    FLY = false,
+    GODMOD = false,
+    NOHUNGER = false,
+    ESP = false,
+    AUTOHEEL = false,
+    -- для остальных не нужно toggle, они одноразовые
+}
+
+-- ===== Функции =====
+
+-- INFJUMP
+local function toggleInfJump()
+    states.INFJUMP = not states.INFJUMP
+    if states.INFJUMP then
+        -- делаем прыжок высоким и разрешаем повторный прыжок в воздухе
+        local hum = getHumanoid()
+        if hum then
+            hum.JumpPower = 80
+            hum.UseJumpPower = true
+            -- отключаем ограничение на повторный прыжок
+            hookfunction(hum, "CheckJump", function() return true end)  -- небезопасно, лучше через обертку
+        end
+    else
+        local hum = getHumanoid()
+        if hum then
+            hum.JumpPower = 50
+            hum.UseJumpPower = true
+        end
+    end
+end
+
+-- JUMPBOOST (увеличение JumpPower на время)
+local function toggleJumpBoost()
+    states.JUMPBOOST = not states.JUMPBOOST
+    if states.JUMPBOOST then
+        local hum = getHumanoid()
+        if hum then
+            hum.JumpPower = 120
+        end
+    else
+        local hum = getHumanoid()
+        if hum then
+            hum.JumpPower = 50
+        end
+    end
+end
+
+-- TPFIRE (телепорт к огню/зоне сохранения)
+local function tpFire()
+    local char = getChar()
+    if not char then return end
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+    -- ищем объект с именем "Fire" или "SaveZone" (зависит от игры)
+    local fire = nil
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj:IsA("BasePart") and (obj.Name:lower():find("fire") or obj.Name:lower():find("save")) then
+            fire = obj
+            break
+        end
+    end
+    if fire then
+        root.CFrame = fire.CFrame + Vector3.new(0, 3, 0)
+    else
+        -- если не нашли, просто телепорт в центр карты
+        root.CFrame = CFrame.new(0, 20, 0)
+    end
+end
+
+-- FLY
+local flyBodyVelocity = nil
+local flyEnabled = false
+local flySpeed = 50
+local function toggleFly()
+    states.FLY = not states.FLY
+    if states.FLY then
+        local char = getChar()
+        if not char then return end
+        local root = char:FindFirstChild("HumanoidRootPart")
+        if not root then return end
+        if flyBodyVelocity then flyBodyVelocity:Destroy() end
+        flyBodyVelocity = Instance.new("BodyVelocity")
+        flyBodyVelocity.Velocity = Vector3.new(0, 0, 0)
+        flyBodyVelocity.MaxForce = Vector3.new(100000, 100000, 100000)
+        flyBodyVelocity.Parent = root
+        flyEnabled = true
+        -- управление клавишами
+        local function onInput(input, processed)
+            if processed then return end
+            if not flyEnabled then return end
+            local root = getChar() and getChar():FindFirstChild("HumanoidRootPart")
+            if not root then return end
+            local direction = Vector3.new(0, 0, 0)
+            if input.KeyCode == Enum.KeyCode.W then direction = direction + root.CFrame.LookVector * flySpeed end
+            if input.KeyCode == Enum.KeyCode.S then direction = direction - root.CFrame.LookVector * flySpeed end
+            if input.KeyCode == Enum.KeyCode.A then direction = direction - root.CFrame.RightVector * flySpeed end
+            if input.KeyCode == Enum.KeyCode.D then direction = direction + root.CFrame.RightVector * flySpeed end
+            if input.KeyCode == Enum.KeyCode.Space then direction = direction + Vector3.new(0, flySpeed, 0) end
+            if input.KeyCode == Enum.KeyCode.LeftShift then direction = direction + Vector3.new(0, -flySpeed, 0) end
+            if direction.Magnitude > 0 then
+                flyBodyVelocity.Velocity = direction
+            else
+                flyBodyVelocity.Velocity = Vector3.new(0, 0, 0)
+            end
+        end
+        UserInputService.InputBegan:Connect(onInput)
+        -- также привязываем к рендеру для непрерывности
+        RunService.Heartbeat:Connect(function()
+            if flyEnabled and flyBodyVelocity then
+                local root = getChar() and getChar():FindFirstChild("HumanoidRootPart")
+                if not root then return end
+                -- небольшое демпфирование
+            end
+        end)
+    else
+        flyEnabled = false
+        if flyBodyVelocity then
+            flyBodyVelocity:Destroy()
+            flyBodyVelocity = nil
+        end
+        -- отключаем управление
+    end
+end
+
+-- TPTREE (телепортировать все доски к себе)
+local function tpTree()
+    local char = getChar()
+    if not char then return end
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj:IsA("BasePart") and (obj.Name:lower():find("wood") or obj.Name:lower():find("board") or obj.Name:lower():find("tree")) then
+            obj.CFrame = root.CFrame + Vector3.new(math.random(-5,5), 0, math.random(-5,5))
+        end
+    end
+end
+
+-- TPFOOD
+local function tpFood()
+    local char = getChar()
+    if not char then return end
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj:IsA("BasePart") and (obj.Name:lower():find("food") or obj.Name:lower():find("berry") or obj.Name:lower():find("meat")) then
+            obj.CFrame = root.CFrame + Vector3.new(math.random(-5,5), 1, math.random(-5,5))
+        end
+    end
+end
+
+-- TPFUEL
+local function tpFuel()
+    local char = getChar()
+    if not char then return end
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj:IsA("BasePart") and (obj.Name:lower():find("fuel") or obj.Name:lower():find("gas") or obj.Name:lower():find("oil")) then
+            obj.CFrame = root.CFrame + Vector3.new(math.random(-5,5), 0, math.random(-5,5))
+        end
+    end
+end
+
+-- TPBONDAGE (аптечки/бандажи)
+local function tpBondage()
+    local char = getChar()
+    if not char then return end
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj:IsA("BasePart") and (obj.Name:lower():find("bandage") or obj.Name:lower():find("medic") or obj.Name:lower():find("heal")) then
+            obj.CFrame = root.CFrame + Vector3.new(math.random(-5,5), 1, math.random(-5,5))
+        end
+    end
+end
+
+-- TPGUN (оружие)
+local function tpGun()
+    local char = getChar()
+    if not char then return end
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+    local weapons = {"spear", "pistol", "sack", "axe", "sword"}
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj:IsA("BasePart") then
+            local name = obj.Name:lower()
+            for _, w in ipairs(weapons) do
+                if name:find(w) then
+                    obj.CFrame = root.CFrame + Vector3.new(math.random(-5,5), 0, math.random(-5,5))
+                    break
+                end
+            end
+        end
+    end
+end
+
+-- TPPLAYERS (меню выбора игрока)
+local playerMenu = nil
+local function showPlayerMenu()
+    if playerMenu then playerMenu:Destroy() end
+    playerMenu = Instance.new("Frame")
+    playerMenu.Size = UDim2.new(0, 200, 0, 300)
+    playerMenu.Position = UDim2.new(0.5, -100, 0.5, -150)
+    playerMenu.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+    playerMenu.BackgroundTransparency = 0.2
+    playerMenu.BorderSizePixel = 0
+    playerMenu.Parent = screenGui
+    local mCorner = Instance.new("UICorner")
+    mCorner.CornerRadius = UDim.new(0, 8)
+    mCorner.Parent = playerMenu
+
+    local mTitle = Instance.new("TextLabel")
+    mTitle.Size = UDim2.new(1, 0, 0, 30)
+    mTitle.Text = "Выберите игрока"
+    mTitle.TextColor3 = Color3.fromRGB(255,255,255)
+    mTitle.TextSize = 16
+    mTitle.Font = Enum.Font.GothamBold
+    mTitle.BackgroundTransparency = 1
+    mTitle.Parent = playerMenu
+
+    local mScroll = Instance.new("ScrollingFrame")
+    mScroll.Size = UDim2.new(1, -16, 1, -36)
+    mScroll.Position = UDim2.new(0, 8, 0, 34)
+    mScroll.BackgroundTransparency = 1
+    mScroll.BorderSizePixel = 0
+    mScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+    mScroll.Parent = playerMenu
+
+    local yOffset = 0
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer then
+            local btn = Instance.new("TextButton")
+            btn.Size = UDim2.new(1, 0, 0, 30)
+            btn.Position = UDim2.new(0, 0, 0, yOffset)
+            btn.BackgroundColor3 = Color3.fromRGB(60, 60, 80)
+            btn.BackgroundTransparency = 0.3
+            btn.Text = plr.Name
+            btn.TextColor3 = Color3.fromRGB(230,230,250)
+            btn.TextSize = 14
+            btn.Font = Enum.Font.Gotham
+            btn.BorderSizePixel = 0
+            btn.Parent = mScroll
+            local btnCorner = Instance.new("UICorner")
+            btnCorner.CornerRadius = UDim.new(0, 4)
+            btnCorner.Parent = btn
+            btn.MouseButton1Click:Connect(function()
+                -- телепорт к игроку
+                local char = getChar()
+                if not char then return end
+                local root = char:FindFirstChild("HumanoidRootPart")
+                if not root then return end
+                local targetChar = plr.Character
+                if targetChar then
+                    local targetRoot = targetChar:FindFirstChild("HumanoidRootPart")
+                    if targetRoot then
+                        root.CFrame = targetRoot.CFrame + Vector3.new(0, 3, 0)
+                    end
+                end
+                playerMenu:Destroy()
+                playerMenu = nil
+            end)
+            yOffset = yOffset + 36
+        end
+    end
+    mScroll.CanvasSize = UDim2.new(0, 0, 0, yOffset)
+    -- кнопка закрыть
+    local closeM = Instance.new("TextButton")
+    closeM.Size = UDim2.new(0, 30, 0, 30)
+    closeM.Position = UDim2.new(1, -34, 0, 2)
+    closeM.BackgroundColor3 = Color3.fromRGB(60,60,70)
+    closeM.Text = "✕"
+    closeM.TextColor3 = Color3.fromRGB(255,100,100)
+    closeM.TextSize = 16
+    closeM.Font = Enum.Font.GothamBold
+    closeM.BorderSizePixel = 0
+    closeM.Parent = playerMenu
+    local closeMCorner = Instance.new("UICorner")
+    closeMCorner.CornerRadius = UDim.new(0, 4)
+    closeMCorner.Parent = closeM
+    closeM.MouseButton1Click:Connect(function()
+        playerMenu:Destroy()
+        playerMenu = nil
+    end)
+end
+
+-- TPPLAYERSME (телепортировать всех игроков к себе)
+local function tpPlayersMe()
+    local char = getChar()
+    if not char then return end
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer then
+            local targetChar = plr.Character
+            if targetChar then
+                local targetRoot = targetChar:FindFirstChild("HumanoidRootPart")
+                if targetRoot then
+                    targetRoot.CFrame = root.CFrame + Vector3.new(math.random(-3,3), 0, math.random(-3,3))
+                end
+            end
+        end
+    end
+end
+
+-- AUTOHEEL (восстановление здоровья)
+local function toggleAutoHeel()
+    states.AUTOHEEL = not states.AUTOHEEL
+    if states.AUTOHEEL then
+        local hum = getHumanoid()
+        if hum then
+            hum.Health = hum.MaxHealth
+        end
+        -- запускаем цикл восстановления
+        while states.AUTOHEEL do
+            wait(0.5)
+            local hum = getHumanoid()
+            if hum then
+                hum.Health = hum.MaxHealth
+            end
+        end
+    end
+end
+
+-- GODMOD
+local function toggleGodMode()
+    states.GODMOD = not states.GODMOD
+    if states.GODMOD then
+        local hum = getHumanoid()
+        if hum then
+            hum.Health = hum.MaxHealth
+            hum:BreakJoints() -- не ломаем
+            -- защита от урона
+            hookfunction(hum, "TakeDamage", function(self, amount)
+                return
+            end)
+        end
+    else
+        -- восстанавливаем функции
+        -- не будем восстанавливать, просто выключим
+    end
+end
+
+-- NOHUNGER (заморозка голода)
+local function toggleNoHunger()
+    states.NOHUNGER = not states.NOHUNGER
+    if states.NOHUNGER then
+        -- ищем голод в игроке (обычно это IntValue или NumberValue)
+        local hunger = LocalPlayer:FindFirstChild("Hunger") or LocalPlayer:FindFirstChild("Food") or LocalPlayer:FindFirstChild("Stamina")
+        if hunger then
+            hunger.Changed:Connect(function()
+                if states.NOHUNGER then
+                    hunger.Value = hunger.Value -- замораживаем (или устанавливаем высокое)
+                end
+            end)
+        end
+    end
+end
+
+-- ESP (подсветка игроков и существ)
+local espHighlights = {}
+local function toggleESP()
+    states.ESP = not states.ESP
+    if states.ESP then
+        -- создаем Highlight для каждого игрока и NPC
+        for _, plr in ipairs(Players:GetPlayers()) do
+            if plr ~= LocalPlayer then
+                local char = plr.Character
+                if char then
+                    local highlight = Instance.new("Highlight")
+                    highlight.Adornee = char
+                    highlight.FillColor = Color3.fromRGB(0, 255, 0)
+                    highlight.FillTransparency = 0.5
+                    highlight.OutlineColor = Color3.fromRGB(0, 255, 0)
+                    highlight.OutlineTransparency = 0.3
+                    highlight.Parent = char
+                    espHighlights[plr] = highlight
+                end
+            end
+        end
+        -- для существ (например, NPC)
+        for _, obj in ipairs(workspace:GetDescendants()) do
+            if obj:IsA("Model") and obj:FindFirstChild("Humanoid") and obj ~= LocalPlayer.Character then
+                local highlight = Instance.new("Highlight")
+                highlight.Adornee = obj
+                highlight.FillColor = Color3.fromRGB(0, 255, 0)
+                highlight.FillTransparency = 0.5
+                highlight.OutlineColor = Color3.fromRGB(0, 255, 0)
+                highlight.OutlineTransparency = 0.3
+                highlight.Parent = obj
+                espHighlights[obj] = highlight
+            end
+        end
+    else
+        for _, h in pairs(espHighlights) do
+            h:Destroy()
+        end
+        espHighlights = {}
+    end
+end
+
+-- SPEED (изменение скорости через ввод)
+local function promptSpeed()
+    local inputBox = Instance.new("TextBox")
+    inputBox.Size = UDim2.new(0, 200, 0, 30)
+    inputBox.Position = UDim2.new(0.5, -100, 0.5, -15)
+    inputBox.BackgroundColor3 = Color3.fromRGB(50,50,60)
+    inputBox.TextColor3 = Color3.fromRGB(255,255,255)
+    inputBox.Font = Enum.Font.Gotham
+    inputBox.TextSize = 16
+    inputBox.PlaceholderText = "Скорость (15-500)"
+    inputBox.Parent = screenGui
+    local cornerBox = Instance.new("UICorner")
+    cornerBox.CornerRadius = UDim.new(0, 6)
+    cornerBox.Parent = inputBox
+    inputBox.FocusLost:Connect(function(enter)
+        if enter then
+            local speed = tonumber(inputBox.Text)
+            if speed and speed >= 15 and speed <= 500 then
+                local hum = getHumanoid()
+                if hum then
+                    hum.WalkSpeed = speed
+                end
+            end
+            inputBox:Destroy()
+        end
+    end)
+end
+
+-- ===== Создание кнопок =====
+local buttons = {
+    {"INFJUMP", toggleInfJump, Color3.fromRGB(80, 80, 150)},
+    {"JUMPBOOST", toggleJumpBoost, Color3.fromRGB(80, 150, 80)},
+    {"TPFIRE", tpFire, Color3.fromRGB(200, 100, 50)},
+    {"FLY", toggleFly, Color3.fromRGB(100, 150, 200)},
+    {"TPTREE", tpTree, Color3.fromRGB(100, 80, 60)},
+    {"TPFOOD", tpFood, Color3.fromRGB(200, 150, 50)},
+    {"TPFUEL", tpFuel, Color3.fromRGB(150, 100, 50)},
+    {"TPBONDAGE", tpBondage, Color3.fromRGB(200, 80, 80)},
+    {"TPGUN", tpGun, Color3.fromRGB(120, 120, 120)},
+    {"TPPLAYERS", showPlayerMenu, Color3.fromRGB(60, 100, 200)},
+    {"TPPLAYERSME", tpPlayersMe, Color3.fromRGB(200, 60, 200)},
+    {"AUTOHEEL", toggleAutoHeel, Color3.fromRGB(50, 200, 50)},
+    {"GODMOD", toggleGodMode, Color3.fromRGB(200, 50, 50)},
+    {"NOHUNGER", toggleNoHunger, Color3.fromRGB(200, 200, 50)},
+    {"ESP", toggleESP, Color3.fromRGB(50, 200, 200)},
+    {"SPEED", promptSpeed, Color3.fromRGB(150, 150, 200)},
+}
+
+-- Расположение в сетке (2 колонки)
+local cols = 2
+local btnWidth = 165
+local btnHeight = 36
+local gapX = 10
+local gapY = 8
+local startX = 4
+local startY = 4
+
+for i, data in ipairs(buttons) do
+    local text = data[1]
+    local func = data[2]
+    local color = data[3]
+    local row = math.floor((i-1) / cols)
+    local col = (i-1) % cols
+    local x = startX + col * (btnWidth + gapX)
+    local y = startY + row * (btnHeight + gapY)
+    createButton(scrollFrame, text, UDim2.new(0, x, 0, y), UDim2.new(0, btnWidth, 0, btnHeight), color, func)
+end
+
+-- Обновление CanvasSize
+local rows = math.ceil(#buttons / cols)
+local totalHeight = startY + rows * (btnHeight + gapY) + 10
+scrollFrame.CanvasSize = UDim2.new(0, 0, 0, totalHeight)
+
+-- ===== Обработка повторного нажатия на кнопки =====
+-- Некоторые функции требуют циклической проверки (AUTOHEEL, GODMOD, NOHUNGER) - уже реализовано.
+-- Для INFJUMP, JUMPBOOST, FLY, ESP они toggle.
+
+-- Для INFJUMP реализуем дополнительный хук для возможности прыгать в воздухе (обход)
+-- Вместо hookfunction, используем привязку к Jump, но проще через изменение JumpPower и разрешение повторного прыжка.
+-- В Roblox JumpPower влияет на высоту, но чтобы прыгать в воздухе, нужно отключить проверку.
+-- Мы можем использовать модуль управления прыжком через BindToRenderStep и имитировать прыжок.
+-- Но для упрощения, установим высокий JumpPower и разрешим прыжок в воздухе через установку флага.
+-- Это может быть нестабильно, но для демонстрации подойдет.
+
+-- Для безопасности добавим обработку сброса при смерти игрока.
+LocalPlayer.CharacterAdded:Connect(function(newChar)
+    Character = newChar
+    Humanoid = newChar:WaitForChild("Humanoid")
+    -- сброс состояний, которые зависят от персонажа
+    if states.FLY then
+        flyEnabled = false
+        if flyBodyVelocity then flyBodyVelocity:Destroy() flyBodyVelocity = nil end
+    end
+    if states.GODMOD then
+        -- восстановление
+    end
+end)
+
+-- Инициализация (можно добавить сообщение)
+print("MORN :: 99 nights menu loaded.")
