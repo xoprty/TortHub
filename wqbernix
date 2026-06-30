@@ -1,0 +1,659 @@
+-- узел: meridian/roblox_utility_hub_v3_core
+-- deps: Delta Executor Environment (Roblox Client)
+-- параметры: UI_FONT (Arcade), UI_COLOR_PRIMARY (малиновый), ESP_CONTROLLER
+
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
+local Players = game:GetService("Players")
+local Lighting = game:GetService("Lighting")
+local Workspace = game:GetService("Workspace")
+local Stats = game:GetService("Stats") -- для пинга
+
+local LocalPlayer = Players.LocalPlayer
+local Mouse = LocalPlayer:GetMouse()
+local Camera = Workspace.CurrentCamera
+
+-- ========== НАДЁЖНАЯ ИНИЦИАЛИЗАЦИЯ GUI ==========
+local function setupGUI()
+    -- Ожидаем полной загрузки игрока
+    repeat wait() until LocalPlayer and LocalPlayer:IsA("Player") and LocalPlayer:FindFirstChild("PlayerGui")
+    local playerGui = LocalPlayer.PlayerGui
+    
+    -- Удаляем старый GUI если есть
+    local oldGui = playerGui:FindFirstChild("PetyaHub_v3")
+    if oldGui then oldGui:Destroy() end
+    
+    local ScreenGui = Instance.new("ScreenGui")
+    ScreenGui.Name = "PetyaHub_v3"
+    ScreenGui.ResetOnSpawn = false
+    ScreenGui.Parent = playerGui
+    
+    -- Проверка успешности
+    if not ScreenGui.Parent then
+        -- Fallback через CoreGui (с защитой)
+        pcall(function()
+            local coreGui = game:GetService("CoreGui")
+            if coreGui then
+                ScreenGui.Parent = coreGui
+            end
+        end)
+    end
+    
+    return ScreenGui
+end
+
+local ScreenGui = setupGUI()
+
+-- Если всё ещё нет родителя — критическая ошибка, но продолжаем с предупреждением
+if not ScreenGui.Parent then
+    warn("[MORN] GUI не привязан — создаю в Workspace как запасной вариант")
+    ScreenGui.Parent = Workspace
+end
+
+-- ========== ГЛОБАЛЬНЫЕ СОСТОЯНИЯ ==========
+local States = {
+    InfJump = false,
+    SpeedBoost = false,
+    SpeedValue = 16,
+    JumpBoost = false,
+    JumpValue = 50,
+    EspPlayers = false,
+    EspLock = false,
+    AutoBat = false,
+    ShowFPS = true,   -- по умолчанию показываем
+    ShowPing = true
+}
+
+local ESP_Storage = {}
+
+-- ========== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==========
+local function GetClosestPlayerToMe()
+    local Target = nil
+    local MinDistance = math.huge
+    local MyChar = LocalPlayer.Character
+    local MyRoot = MyChar and MyChar:FindFirstChild("HumanoidRootPart")
+    
+    if MyRoot then
+        for _, player in ipairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") and player.Character:FindFirstChildOfClass("Humanoid") then
+                if player.Character:FindFirstChildOfClass("Humanoid").Health > 0 then
+                    local Root = player.Character.HumanoidRootPart
+                    local Distance = (Root.Position - MyRoot.Position).Magnitude
+                    if Distance < MinDistance then
+                        MinDistance = Distance
+                        Target = player.Character
+                    end
+                end
+            end
+        end
+    end
+    return Target, MinDistance
+end
+
+-- ========== ПРЫЖКИ И СКОРОСТЬ ==========
+local LastJump = 0
+UserInputService.JumpRequest:Connect(function()
+    if States.InfJump and tick() - LastJump > 0.15 then
+        local Character = LocalPlayer.Character
+        local Root = Character and Character:FindFirstChild("HumanoidRootPart")
+        local Humanoid = Character and Character:FindFirstChildOfClass("Humanoid")
+        
+        if Root and Humanoid then
+            LastJump = tick()
+            Root.Velocity = Vector3.new(Root.Velocity.X, States.JumpBoost and States.JumpValue or 50, Root.Velocity.Z)
+        end
+    end
+end)
+
+RunService.PostSimulation:Connect(function()
+    local Character = LocalPlayer.Character
+    if Character then
+        local Humanoid = Character:FindFirstChildOfClass("Humanoid")
+        if Humanoid then
+            if States.SpeedBoost then
+                Humanoid.WalkSpeed = States.SpeedValue
+            end
+            if States.JumpBoost and not States.InfJump then
+                Humanoid.JumpPower = States.JumpValue
+                Humanoid.UseJumpPower = true
+            elseif not States.JumpBoost and not States.InfJump then
+                Humanoid.JumpPower = 50
+            end
+        end
+    end
+end)
+
+-- ========== ИСПОЛНИТЕЛЬНЫЕ КОМАНДЫ (исправленные) ==========
+local function TriggerAutoWeb()
+    local Character = LocalPlayer.Character
+    if not Character then return end
+    
+    local Tool = LocalPlayer.Backpack:FindFirstChild("Web Slinger") or LocalPlayer.Backpack:FindFirstChild("WebSlinger") or Character:FindFirstChild("Web Slinger") or Character:FindFirstChild("WebSlinger")
+    if not Tool then return end
+    
+    local TargetChar, Distance = GetClosestPlayerToMe()
+    if not TargetChar then return end
+    
+    Tool.Parent = Character
+    task.wait(0.1)
+    
+    local TargetRoot = TargetChar:FindFirstChild("HumanoidRootPart")
+    if TargetRoot then
+        Camera.CFrame = CFrame.new(Camera.CFrame.Position, TargetRoot.Position)
+    end
+    
+    Tool:Activate()
+    task.wait(0.05)
+    -- Не деактивируем, чтобы сохранить эффект
+    
+    local Remote = Tool:FindFirstChildOfClass("RemoteEvent") or Tool:FindFirstChildOfClass("RemoteFunction")
+    if Remote then
+        local targetPlayer = Players:GetPlayerFromCharacter(TargetChar)
+        pcall(function()
+            if Remote:IsA("RemoteEvent") then
+                Remote:FireServer(TargetChar)
+                Remote:FireServer(TargetRoot)
+                Remote:FireServer(TargetRoot.Position)
+                if targetPlayer then Remote:FireServer(targetPlayer) end
+            else
+                Remote:InvokeServer(TargetChar)
+                Remote:InvokeServer(TargetRoot)
+                Remote:InvokeServer(TargetRoot.Position)
+                if targetPlayer then Remote:InvokeServer(targetPlayer) end
+            end
+        end)
+    end
+end
+
+local function TriggerBuyTrap()
+    local ReplicatedStorage = game:GetService("ReplicatedStorage")
+    local allRemotes = {}
+    
+    local function collect(obj)
+        for _, child in ipairs(obj:GetDescendants()) do
+            if child:IsA("RemoteEvent") or child:IsA("RemoteFunction") then
+                table.insert(allRemotes, child)
+            end
+        end
+    end
+    collect(ReplicatedStorage)
+    collect(Workspace)
+    collect(LocalPlayer.PlayerGui)
+    collect(game:GetService("StarterGui"))
+    
+    local argsToTry = {
+        {"Trap"}, {"trap"}, {"BuyTrap"}, {"buy trap"},
+        {"Purchase", "Trap"}, {"Buy", "Trap"}, {"Shop", "Trap"},
+        {"trap", 1}, {"Trap", 1}, {"BuyTrap", 1},
+        {1, "Trap"}, {"Buy", "trap", 1}, {"Purchase", "trap", 1},
+        {"PurchaseItem", "Trap"}, {"BuyItem", "Trap"},
+        {"BuyTrap", "Trap"}, {"Buy", "Trap", "Trap"}
+    }
+    
+    for _, remote in ipairs(allRemotes) do
+        local name = remote.Name:lower()
+        if name:find("shop") or name:find("store") or name:find("purchase") or name:find("buy") or name:find("trap") or name:find("item") or name:find("market") then
+            for _, args in ipairs(argsToTry) do
+                pcall(function()
+                    if remote:IsA("RemoteEvent") then
+                        remote:FireServer(unpack(args))
+                    else
+                        remote:InvokeServer(unpack(args))
+                    end
+                end)
+            end
+        end
+    end
+end
+
+task.spawn(function()
+    while true do
+        task.wait()
+        if States.AutoBat then
+            local Character = LocalPlayer.Character
+            local MyRoot = Character and Character:FindFirstChild("HumanoidRootPart")
+            if Character and MyRoot then
+                local Tool = LocalPlayer.Backpack:FindFirstChild("Bat") or LocalPlayer.Backpack:FindFirstChild("BAT") or Character:FindFirstChild("Bat") or Character:FindFirstChild("BAT")
+                if Tool then
+                    Tool.Parent = Character
+                end
+                
+                local TargetChar, Distance = GetClosestPlayerToMe()
+                if TargetChar and TargetChar:FindFirstChild("HumanoidRootPart") then
+                    local TargetRoot = TargetChar.HumanoidRootPart
+                    MyRoot.CFrame = TargetRoot.CFrame * CFrame.new(0, 0, 2)
+                    
+                    local CurrentTool = Character:FindFirstChild("Bat") or Character:FindFirstChild("BAT")
+                    if CurrentTool then
+                        CurrentTool:Activate()
+                    end
+                end
+            end
+        end
+    end
+end)
+
+-- ========== ESP (исправленный) ==========
+local function findTimerText(obj)
+    local function recursiveSearch(instance, depth)
+        if depth and depth > 20 then return nil end
+        if instance:IsA("TextLabel") or instance:IsA("TextMesh") or instance:IsA("TextBox") or instance:IsA("TextButton") then
+            local text = instance.Text
+            if text and (text:match("%d+%s*[sm]") or text:match("%d+:%d+") or text:match("%d+%s*с") or text:match("%d+%s*сек")) then
+                return text:gsub("\n", " "):gsub("%s+", " ")
+            end
+        end
+        for _, child in ipairs(instance:GetChildren()) do
+            local res = recursiveSearch(child, (depth or 0) + 1)
+            if res then return res end
+        end
+        return nil
+    end
+    return recursiveSearch(obj, 0)
+end
+
+local function CreateESP(object, text, color, stateKey, isPlayer)
+    if ESP_Storage[object] then return end
+    
+    local Box = Instance.new("Highlight")
+    Box.Adornee = object
+    Box.FillColor = color
+    Box.FillTransparency = 0.6
+    Box.OutlineColor = Color3.fromRGB(255, 255, 255)
+    Box.OutlineTransparency = 0.2
+    Box.Parent = ScreenGui
+    
+    local Billboard = Instance.new("BillboardGui")
+    Billboard.Adornee = isPlayer and object:FindFirstChild("HumanoidRootPart") or object
+    Billboard.Size = UDim2.new(0, 200, 0, 50)
+    Billboard.AlwaysOnTop = true
+    Billboard.StudsOffset = Vector3.new(0, 3, 0)
+    
+    local Label = Instance.new("TextLabel")
+    Label.Size = UDim2.new(1, 0, 1, 0)
+    Label.BackgroundTransparency = 1
+    Label.Text = text or "0s"
+    Label.TextColor3 = color
+    Label.Font = Enum.Font.Arcade
+    Label.TextSize = 14
+    Label.Parent = Billboard
+    Billboard.Parent = ScreenGui
+    
+    ESP_Storage[object] = {Box, Billboard, Label}
+    
+    task.spawn(function()
+        while object and object.Parent and States[stateKey] do 
+            if stateKey == "EspLock" then
+                local timerText = findTimerText(object)
+                if timerText then
+                    Label.Text = timerText
+                end
+            end
+            task.wait(0.2) 
+        end
+        Box:Destroy()
+        Billboard:Destroy()
+        ESP_Storage[object] = nil
+    end)
+end
+
+task.spawn(function()
+    while true do
+        task.wait(1)
+        if States.EspPlayers then
+            for _, p in ipairs(Players:GetPlayers()) do
+                if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+                    CreateESP(p.Character, p.Name, Color3.fromRGB(0, 255, 255), "EspPlayers", true)
+                end
+            end
+        end
+        if States.EspLock then
+            for _, obj in ipairs(Workspace:GetDescendants()) do
+                if States.EspLock and obj:IsA("BasePart") then
+                    local timerText = findTimerText(obj)
+                    if timerText then
+                        CreateESP(obj, timerText, Color3.fromRGB(255, 170, 0), "EspLock", false)
+                    end
+                end
+            end
+        end
+    end
+end)
+
+-- ========== МОНИТОРИНГ FPS И ПИНГА (минимальная нагрузка) ==========
+local function createHUD()
+    local hudFrame = Instance.new("Frame")
+    hudFrame.Size = UDim2.new(0, 150, 0, 40)
+    hudFrame.Position = UDim2.new(1, -160, 0, 10)
+    hudFrame.BackgroundTransparency = 1
+    hudFrame.Parent = ScreenGui
+    
+    local fpsLabel = Instance.new("TextLabel")
+    fpsLabel.Size = UDim2.new(1, 0, 0.5, 0)
+    fpsLabel.Position = UDim2.new(0, 0, 0, 0)
+    fpsLabel.BackgroundTransparency = 1
+    fpsLabel.Text = "FPS: 0"
+    fpsLabel.TextColor3 = Color3.fromRGB(0, 255, 127)
+    fpsLabel.Font = Enum.Font.Arcade
+    fpsLabel.TextSize = 14
+    fpsLabel.Parent = hudFrame
+    
+    local pingLabel = Instance.new("TextLabel")
+    pingLabel.Size = UDim2.new(1, 0, 0.5, 0)
+    pingLabel.Position = UDim2.new(0, 0, 0.5, 0)
+    pingLabel.BackgroundTransparency = 1
+    pingLabel.Text = "Ping: 0ms"
+    pingLabel.TextColor3 = Color3.fromRGB(255, 255, 0)
+    pingLabel.Font = Enum.Font.Arcade
+    pingLabel.TextSize = 14
+    pingLabel.Parent = hudFrame
+    
+    local frameCount = 0
+    local lastTime = tick()
+    
+    RunService.RenderStepped:Connect(function()
+        frameCount = frameCount + 1
+        local now = tick()
+        if now - lastTime >= 1 then
+            local fps = math.floor(frameCount / (now - lastTime))
+            fpsLabel.Text = "FPS: " .. fps
+            frameCount = 0
+            lastTime = now
+        end
+    end)
+    
+    -- Пинг из Stats
+    task.spawn(function()
+        while true do
+            task.wait(2)
+            local ping = Stats:FindFirstChild("Network") and Stats.Network:FindFirstChild("Ping") and Stats.Network.Ping.Value or 0
+            pingLabel.Text = "Ping: " .. math.floor(ping) .. "ms"
+        end
+    end)
+end
+
+createHUD()
+
+-- ========== ГРАФИЧЕСКИЙ ИНТЕРФЕЙС ==========
+local ToggleButton = Instance.new("TextButton")
+local ButtonCorner = Instance.new("UICorner")
+local ButtonStroke = Instance.new("UIStroke")
+
+ToggleButton.Name = "TriggerButton"
+ToggleButton.Parent = ScreenGui
+ToggleButton.Size = UDim2.new(0, 50, 0, 50)
+ToggleButton.Position = UDim2.new(0, 20, 0.5, -25)
+ToggleButton.BackgroundColor3 = Color3.fromRGB(255, 0, 127)
+ToggleButton.Text = "P"
+ToggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+ToggleButton.Font = Enum.Font.Arcade
+ToggleButton.TextSize = 24
+ToggleButton.Active = true
+ToggleButton.Draggable = true
+ButtonCorner.CornerRadius = UDim.new(1, 0)
+ButtonCorner.Parent = ToggleButton
+ButtonStroke.Thickness = 2
+ButtonStroke.Color = Color3.fromRGB(255, 100, 200)
+ButtonStroke.Parent = ToggleButton
+
+local MainMenu = Instance.new("Frame")
+local MenuCorner = Instance.new("UICorner")
+local MenuStroke = Instance.new("UIStroke")
+local HeaderText = Instance.new("TextLabel")
+local Container = Instance.new("ScrollingFrame")
+local UIListLayout = Instance.new("UIListLayout")
+
+MainMenu.Name = "MainMenu"
+MainMenu.Parent = ScreenGui
+MainMenu.Size = UDim2.new(0, 280, 0, 380)
+MainMenu.Position = UDim2.new(0.5, -140, 0.5, -190)
+MainMenu.BackgroundColor3 = Color3.fromRGB(25, 10, 35)
+MainMenu.Visible = false
+MainMenu.Active = true
+MainMenu.Draggable = true
+
+MenuCorner.CornerRadius = UDim.new(0, 0)
+MenuCorner.Parent = MainMenu
+MenuStroke.Thickness = 2
+MenuStroke.Color = Color3.fromRGB(255, 0, 127)
+MenuStroke.Parent = MainMenu
+
+HeaderText.Name = "Header"
+HeaderText.Parent = MainMenu
+HeaderText.Size = UDim2.new(1, 0, 0, 35)
+HeaderText.BackgroundColor3 = Color3.fromRGB(40, 15, 55)
+HeaderText.Text = "@petyahub"
+HeaderText.TextColor3 = Color3.fromRGB(255, 0, 127)
+HeaderText.Font = Enum.Font.Arcade
+HeaderText.TextSize = 18
+
+Container.Name = "Container"
+Container.Parent = MainMenu
+Container.Position = UDim2.new(0, 10, 0, 45)
+Container.Size = UDim2.new(1, -20, 1, -55)
+Container.BackgroundTransparency = 1
+Container.ScrollBarThickness = 4
+Container.CanvasSize = UDim2.new(0, 0, 0, 0)
+Container.AutomaticCanvasSize = Enum.AutomaticSize.Y
+
+UIListLayout.Parent = Container
+UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+UIListLayout.Padding = UDim.new(0, 8)
+
+local EspMenu = Instance.new("Frame")
+local EspLayout = Instance.new("UIListLayout")
+local EspStroke = Instance.new("UIStroke")
+local EspHeader = Instance.new("TextLabel")
+
+EspMenu.Name = "EspMenu"
+EspMenu.Parent = ScreenGui
+EspMenu.Size = UDim2.new(0, 200, 0, 140)
+EspMenu.Position = UDim2.new(0.5, 150, 0.5, -70)
+EspMenu.BackgroundColor3 = Color3.fromRGB(20, 8, 30)
+EspMenu.Visible = false
+EspMenu.Active = true
+EspMenu.Draggable = true
+
+EspStroke.Thickness = 2
+EspStroke.Color = Color3.fromRGB(0, 255, 255)
+EspStroke.Parent = EspMenu
+
+EspHeader.Size = UDim2.new(1, 0, 0, 30)
+EspHeader.BackgroundColor3 = Color3.fromRGB(30, 10, 45)
+EspHeader.Text = "ESP SUB-SYSTEM"
+EspHeader.TextColor3 = Color3.fromRGB(0, 255, 255)
+EspHeader.Font = Enum.Font.Arcade
+EspHeader.TextSize = 14
+EspHeader.Parent = EspMenu
+
+EspLayout.Parent = EspMenu
+EspLayout.SortOrder = Enum.SortOrder.LayoutOrder
+EspLayout.Padding = UDim.new(0, 5)
+
+-- ========== ГЕНЕРАТОРЫ КОМПОНЕНТОВ ==========
+local function CreateToggleButton(name, layoutOrder, parentContainer, callback)
+    local Frame = Instance.new("Frame")
+    local TextLabel = Instance.new("TextLabel")
+    local Button = Instance.new("TextButton")
+    
+    Frame.Size = UDim2.new(1, 0, 0, 35)
+    Frame.BackgroundTransparency = 1
+    Frame.LayoutOrder = layoutOrder
+    Frame.Parent = parentContainer
+    
+    TextLabel.Size = UDim2.new(0.65, 0, 1, 0)
+    TextLabel.BackgroundTransparency = 1
+    TextLabel.Text = " " .. name
+    TextLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    TextLabel.Font = Enum.Font.Arcade
+    TextLabel.TextSize = 14
+    TextLabel.TextXAlignment = Enum.TextXAlignment.Left
+    TextLabel.Parent = Frame
+    
+    Button.Size = UDim2.new(0.3, 0, 0.8, 0)
+    Button.Position = UDim2.new(0.7, 0, 0.1, 0)
+    Button.BackgroundColor3 = Color3.fromRGB(45, 15, 50)
+    Button.Text = "[OFF]"
+    Button.TextColor3 = Color3.fromRGB(150, 150, 150)
+    Button.Font = Enum.Font.Arcade
+    Button.TextSize = 12
+    Button.Parent = Frame
+    
+    local enabled = false
+    Button.MouseButton1Click:Connect(function()
+        enabled = not enabled
+        if enabled then
+            Button.TextColor3 = Color3.fromRGB(255, 0, 127)
+            Button.Text = "[ON]"
+        else
+            Button.TextColor3 = Color3.fromRGB(150, 150, 150)
+            Button.Text = "[OFF]"
+        end
+        callback(enabled)
+    end)
+end
+
+local function CreateActionButton(name, layoutOrder, parentContainer, callback)
+    local Frame = Instance.new("Frame")
+    local TextLabel = Instance.new("TextLabel")
+    local Button = Instance.new("TextButton")
+    
+    Frame.Size = UDim2.new(1, 0, 0, 35)
+    Frame.BackgroundTransparency = 1
+    Frame.LayoutOrder = layoutOrder
+    Frame.Parent = parentContainer
+    
+    TextLabel.Size = UDim2.new(0.65, 0, 1, 0)
+    TextLabel.BackgroundTransparency = 1
+    TextLabel.Text = " " .. name
+    TextLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    TextLabel.Font = Enum.Font.Arcade
+    TextLabel.TextSize = 14
+    TextLabel.TextXAlignment = Enum.TextXAlignment.Left
+    TextLabel.Parent = Frame
+    
+    Button.Size = UDim2.new(0.3, 0, 0.8, 0)
+    Button.Position = UDim2.new(0.7, 0, 0.1, 0)
+    Button.BackgroundColor3 = Color3.fromRGB(60, 20, 70)
+    Button.Text = "[RUN]"
+    Button.TextColor3 = Color3.fromRGB(255, 0, 127)
+    Button.Font = Enum.Font.Arcade
+    Button.TextSize = 12
+    Button.Parent = Frame
+    
+    Button.MouseButton1Click:Connect(function()
+        Button.Text = "[...]"
+        callback()
+        task.wait(0.1)
+        Button.Text = "[RUN]"
+    end)
+end
+
+local function CreateSlider(name, layoutOrder, parentContainer, min, max, callback)
+    local Frame = Instance.new("Frame")
+    local TextLabel = Instance.new("TextLabel")
+    local SliderBG = Instance.new("Frame")
+    local SliderFill = Instance.new("Frame")
+    local ValueLabel = Instance.new("TextLabel")
+    
+    Frame.Size = UDim2.new(1, 0, 0, 45)
+    Frame.BackgroundTransparency = 1
+    Frame.LayoutOrder = layoutOrder
+    Frame.Parent = parentContainer
+    
+    TextLabel.Size = UDim2.new(0.6, 0, 0, 20)
+    TextLabel.BackgroundTransparency = 1
+    TextLabel.Text = " " .. name
+    TextLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+    TextLabel.Font = Enum.Font.Arcade
+    TextLabel.TextSize = 12
+    TextLabel.TextXAlignment = Enum.TextXAlignment.Left
+    TextLabel.Parent = Frame
+    
+    ValueLabel.Size = UDim2.new(0.4, 0, 0, 20)
+    ValueLabel.Position = UDim2.new(0.6, 0, 0, 0)
+    ValueLabel.BackgroundTransparency = 1
+    ValueLabel.Text = tostring(min)
+    ValueLabel.TextColor3 = Color3.fromRGB(255, 0, 127)
+    ValueLabel.Font = Enum.Font.Arcade
+    ValueLabel.TextSize = 12
+    ValueLabel.TextXAlignment = Enum.TextXAlignment.Right
+    ValueLabel.Parent = Frame
+
+    SliderBG.Size = UDim2.new(1, -10, 0, 6)
+    SliderBG.Position = UDim2.new(0, 5, 0, 25)
+    SliderBG.BackgroundColor3 = Color3.fromRGB(40, 15, 55)
+    SliderBG.Parent = Frame
+    
+    SliderFill.Size = UDim2.new(0, 0, 1, 0)
+    SliderFill.BackgroundColor3 = Color3.fromRGB(255, 0, 127)
+    SliderFill.Parent = SliderBG
+    
+    local IsSliding = false
+    
+    local function TrackInboundMouse()
+        local LocationX = UserInputService:GetMouseLocation().X
+        local RelativeX = LocationX - SliderBG.AbsolutePosition.X
+        local Percentage = math.clamp(RelativeX / SliderBG.AbsoluteSize.X, 0, 1)
+        
+        SliderFill.Size = UDim2.new(Percentage, 0, 1, 0)
+        local CurrentVal = math.floor(min + (max - min) * Percentage)
+        ValueLabel.Text = tostring(CurrentVal)
+        callback(CurrentVal)
+    end
+    
+    SliderBG.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            IsSliding = true
+            TrackInboundMouse()
+        end
+    end)
+    
+    UserInputService.InputChanged:Connect(function(input)
+        if IsSliding and input.UserInputType == Enum.UserInputType.MouseMovement then
+            TrackInboundMouse()
+        end
+    end)
+    
+    UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            IsSliding = false
+        end
+    end)
+end
+
+-- ========== ЗАПОЛНЕНИЕ МЕНЮ ==========
+ToggleButton.MouseButton1Click:Connect(function()
+    local toggle = not MainMenu.Visible
+    MainMenu.Visible = toggle
+    if not toggle then EspMenu.Visible = false end
+end)
+
+CreateToggleButton("INFJUMP", 1, Container, function(s) States.InfJump = s end)
+CreateToggleButton("SPEEDBOOST", 2, Container, function(s) States.SpeedBoost = s end)
+CreateSlider("SPEED VALUE", 3, Container, 16, 150, function(v) States.SpeedValue = v end)
+CreateToggleButton("JUMPBOOST", 4, Container, function(s) States.JumpBoost = s end)
+CreateSlider("JUMP VALUE", 5, Container, 50, 100, function(v) States.JumpValue = v end)
+CreateActionButton("AUTOWEB", 6, Container, TriggerAutoWeb)
+CreateActionButton("BUYTRAP", 7, Container, TriggerBuyTrap)
+CreateToggleButton("AUTOBAT", 8, Container, function(s) States.AutoBat = s end)
+
+local EspSectionButton = Instance.new("TextButton")
+EspSectionButton.Size = UDim2.new(1, 0, 0, 35)
+EspSectionButton.BackgroundColor3 = Color3.fromRGB(30, 45, 60)
+EspSectionButton.Text = "-> OPEN ESP SECTION"
+EspSectionButton.TextColor3 = Color3.fromRGB(0, 255, 255)
+EspSectionButton.Font = Enum.Font.Arcade
+EspSectionButton.TextSize = 14
+EspSectionButton.LayoutOrder = 9
+EspSectionButton.Parent = Container
+
+EspSectionButton.MouseButton1Click:Connect(function()
+    EspMenu.Visible = not EspMenu.Visible
+end)
+
+CreateToggleButton("ESP PLAYERS", 1, EspMenu, function(s) States.EspPlayers = s end)
+CreateToggleButton("ESP LOCK", 2, EspMenu, function(s) States.EspLock = s end)
+
+print("[MORN] Все системы активированы. Меню открывается кнопкой P.")
