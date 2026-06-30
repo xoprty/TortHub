@@ -1,0 +1,202 @@
+-- LocalScript для Roblox (поместить в StarterGui или выполнить в локальном контексте)
+-- Версия: активация через круглую иконку, меню с функциями INFJUMP, JUMPB, PLAT
+
+local player = game.Players.LocalPlayer
+local gui = Instance.new("ScreenGui")
+gui.Name = "BrainrotGUI"
+gui.Parent = player:WaitForChild("PlayerGui")
+
+-- ===== Вспомогательная функция создания кнопок =====
+local function createButton(parent, text, position, size, callback)
+    local btn = Instance.new("TextButton")
+    btn.Size = size or UDim2.new(0, 120, 0, 30)
+    btn.Position = position or UDim2.new(0, 10, 0, 10)
+    btn.Text = text
+    btn.BackgroundColor3 = Color3.fromRGB(60, 60, 80)
+    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    btn.BorderSizePixel = 0
+    btn.Parent = parent
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 8)
+    corner.Parent = btn
+    btn.MouseButton1Click:Connect(callback)
+    return btn
+end
+
+-- ===== Круглая иконка-переключатель меню =====
+local toggleButton = Instance.new("ImageButton")
+toggleButton.Size = UDim2.new(0, 50, 0, 50)
+toggleButton.Position = UDim2.new(0, 10, 0, 10)
+toggleButton.BackgroundColor3 = Color3.fromRGB(30, 30, 50)
+toggleButton.Image = ""
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(1, 0)
+corner.Parent = toggleButton
+toggleButton.Parent = gui
+
+local label = Instance.new("TextLabel")
+label.Size = UDim2.new(1, 0, 1, 0)
+label.BackgroundTransparency = 1
+label.Text = "⚙"
+label.TextColor3 = Color3.fromRGB(255,255,255)
+label.TextSize = 24
+label.Font = Enum.Font.SourceSansBold
+label.Parent = toggleButton
+
+-- ===== Прямоугольное меню (скрыто по умолчанию) =====
+local menu = Instance.new("Frame")
+menu.Size = UDim2.new(0, 200, 0, 200)
+menu.Position = UDim2.new(0, 70, 0, 10)
+menu.BackgroundColor3 = Color3.fromRGB(40, 40, 60)
+menu.BorderSizePixel = 0
+menu.Visible = false
+menu.Parent = gui
+
+local cornerMenu = Instance.new("UICorner")
+cornerMenu.CornerRadius = UDim.new(0, 12)
+cornerMenu.Parent = menu
+
+-- Кнопка закрытия
+local closeBtn = Instance.new("TextButton")
+closeBtn.Size = UDim2.new(0, 20, 0, 20)
+closeBtn.Position = UDim2.new(1, -25, 0, 5)
+closeBtn.Text = "X"
+closeBtn.TextColor3 = Color3.fromRGB(255,255,255)
+closeBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+closeBtn.BorderSizePixel = 0
+closeBtn.Parent = menu
+local cornerClose = Instance.new("UICorner")
+cornerClose.CornerRadius = UDim.new(0, 4)
+cornerClose.Parent = closeBtn
+
+local menuVisible = false
+toggleButton.MouseButton1Click:Connect(function()
+    menuVisible = not menuVisible
+    menu.Visible = menuVisible
+end)
+closeBtn.MouseButton1Click:Connect(function()
+    menu.Visible = false
+    menuVisible = false
+end)
+
+-- ===== Состояния и обработка персонажа =====
+local infJumpEnabled = false
+local jumpBEnabled = false
+local platEnabled = false
+local platPart = nil
+local platSpeed = 20  -- студий в секунду
+local humanoid = nil
+local character = nil
+
+local function onCharacterAdded(newChar)
+    character = newChar
+    humanoid = newChar:WaitForChild("Humanoid")
+    if infJumpEnabled then
+        humanoid.JumpHeight = 50
+    else
+        humanoid.JumpHeight = 7.2
+    end
+    if jumpBEnabled then
+        humanoid.JumpPower = 100
+    else
+        humanoid.JumpPower = 50
+    end
+end
+
+if player.Character then
+    onCharacterAdded(player.Character)
+end
+player.CharacterAdded:Connect(onCharacterAdded)
+
+-- ===== Создание кнопок в меню =====
+local yOffset = 10
+local buttonWidth = 180
+local buttonHeight = 30
+local spacing = 10
+
+-- INFJUMP
+local infJumpBtn = createButton(menu, "INFJUMP", UDim2.new(0, 10, 0, yOffset), UDim2.new(0, buttonWidth, 0, buttonHeight), function()
+    infJumpEnabled = not infJumpEnabled
+    if humanoid then
+        humanoid.JumpHeight = infJumpEnabled and 50 or 7.2
+    end
+    infJumpBtn.BackgroundColor3 = infJumpEnabled and Color3.fromRGB(0, 150, 0) or Color3.fromRGB(60, 60, 80)
+end)
+yOffset = yOffset + buttonHeight + spacing
+
+-- JUMPB
+local jumpBBtn = createButton(menu, "JUMPB", UDim2.new(0, 10, 0, yOffset), UDim2.new(0, buttonWidth, 0, buttonHeight), function()
+    jumpBEnabled = not jumpBEnabled
+    if humanoid then
+        humanoid.JumpPower = jumpBEnabled and 100 or 50
+    end
+    jumpBBtn.BackgroundColor3 = jumpBEnabled and Color3.fromRGB(0, 150, 0) or Color3.fromRGB(60, 60, 80)
+end)
+yOffset = yOffset + buttonHeight + spacing
+
+-- PLAT
+local platBtn = createButton(menu, "PLAT", UDim2.new(0, 10, 0, yOffset), UDim2.new(0, buttonWidth, 0, buttonHeight), function()
+    platEnabled = not platEnabled
+    if platEnabled then
+        if not character then return end
+        local rootPart = character:FindFirstChild("HumanoidRootPart") or character:FindFirstChild("Torso")
+        if not rootPart then return end
+
+        platPart = Instance.new("Part")
+        platPart.Size = Vector3.new(5, 0.5, 5)
+        platPart.Anchored = true
+        platPart.CanCollide = true
+        platPart.Transparency = 0.3
+        platPart.BrickColor = BrickColor.new("Bright blue")
+        platPart.Material = Enum.Material.SmoothPlastic
+        local pos = rootPart.Position
+        platPart.Position = Vector3.new(pos.X, pos.Y - 2, pos.Z)
+        platPart.Parent = workspace
+
+        local bv = Instance.new("BodyVelocity")
+        bv.Velocity = Vector3.new(0, platSpeed, 0)
+        bv.MaxForce = Vector3.new(0, 4000, 0)
+        bv.Parent = platPart
+
+        local runService = game:GetService("RunService")
+        local connection
+        connection = runService.Heartbeat:Connect(function(dt)
+            if not platEnabled or not platPart or not character then
+                if connection then connection:Disconnect() end
+                return
+            end
+            local root = character:FindFirstChild("HumanoidRootPart") or character:FindFirstChild("Torso")
+            if root then
+                local currentPos = platPart.Position
+                platPart.Position = Vector3.new(root.Position.X, currentPos.Y, root.Position.Z)
+            end
+        end)
+        platPart:SetAttribute("HeartbeatConnection", connection)
+    else
+        if platPart then
+            local conn = platPart:GetAttribute("HeartbeatConnection")
+            if conn then conn:Disconnect() end
+            platPart:Destroy()
+            platPart = nil
+        end
+    end
+    platBtn.BackgroundColor3 = platEnabled and Color3.fromRGB(0, 150, 0) or Color3.fromRGB(60, 60, 80)
+end)
+yOffset = yOffset + buttonHeight + spacing
+
+-- Подгон размера меню под содержимое
+menu.Size = UDim2.new(0, buttonWidth + 20, 0, yOffset + 10)
+
+-- ===== Что можно добавить =====
+-- 1. SpeedBoost – увеличение скорости ходьбы (WalkSpeed)
+-- 2. Fly – режим полёта с управлением
+-- 3. Noclip – отключение коллизий
+-- 4. Anti-AFK – имитация движения для предотвращения кика
+-- 5. Настройка скорости платформы через ползунок
+-- 6. Перетаскивание меню мышью
+-- 7. Анимация появления/исчезновения меню (TweenService)
+-- 8. Сохранение состояний в игровых данных (для сохранения между перезаходами)
+-- 9. Звуковое сопровождение при переключении
+-- 10. Стилизация под тему "Brainrot" (неон, глитч-эффекты)
+
+-- ===== Конец скрипта =====
