@@ -1,0 +1,403 @@
+--[[
+    Модуль управления станцией (адаптирован для GMod)
+    Версия 1.0
+    Реализует круглое меню с подменю и всеми запрошенными функциями.
+]]
+
+if SERVER then
+    -- ========== СЕРВЕРНАЯ ЧАСТЬ ==========
+
+    -- Хранилище состояний игроков (чтобы сбрасывать при отключении)
+    local playerStates = {}
+
+    local function getState(ply)
+        if not playerStates[ply] then
+            playerStates[ply] = {
+                jumpBoost = 0,
+                speedBoost = 0,
+                godMode = false,
+                platform = nil
+            }
+        end
+        return playerStates[ply]
+    end
+
+    -- Обработка сетевых команд
+    util.AddNetworkString("Morn_Menu_Command")
+
+    net.Receive("Morn_Menu_Command", function(len, ply)
+        if not IsValid(ply) then return end
+        local cmd = net.ReadString()
+        local val = net.ReadFloat() or 0
+
+        local state = getState(ply)
+
+        if cmd == "inf_jump" then
+            -- Бесконечный прыжок: устанавливаем огромную силу прыжка
+            ply:SetJumpPower(1000)  -- стандартно ~160
+            ply:SetMaxJumpHeight(1000) -- для Overwatch? В GMod обычно SetJumpPower достаточно
+            state.jumpBoost = 1
+            ply:ChatPrint("[MORN] INF JUMP активирован")
+
+        elseif cmd == "jump_b" then
+            -- Буст прыжка: добавляем к базовой силе
+            local base = 160
+            local boost = 400
+            ply:SetJumpPower(base + boost)
+            state.jumpBoost = 2
+            ply:ChatPrint("[MORN] JUMP B активирован (+" .. boost .. ")")
+
+        elseif cmd == "reset_jump" then
+            -- Сброс прыжка (не запрошен явно, но нужен для отмены)
+            ply:SetJumpPower(160)
+            state.jumpBoost = 0
+            ply:ChatPrint("[MORN] Прыжок сброшен")
+
+        elseif cmd == "speed" then
+            -- Буст скорости
+            local base = ply:GetWalkSpeed() -- обычно 200
+            local boost = 250
+            ply:SetWalkSpeed(base + boost)
+            ply:SetRunSpeed(base + boost * 1.2)
+            state.speedBoost = boost
+            ply:ChatPrint("[MORN] SPEED активирован (+" .. boost .. ")")
+
+        elseif cmd == "reset_speed" then
+            ply:SetWalkSpeed(200)
+            ply:SetRunSpeed(400)
+            state.speedBoost = 0
+            ply:ChatPrint("[MORN] Скорость сброшена")
+
+        elseif cmd == "god" then
+            -- Режим бога
+            state.godMode = not state.godMode
+            if state.godMode then
+                ply:GodEnable()
+                ply:ChatPrint("[MORN] GOD включён")
+            else
+                ply:GodDisable()
+                ply:ChatPrint("[MORN] GOD отключён")
+            end
+
+        elseif cmd == "platform" then
+            -- Создать платформу под игроком, которая поднимается
+            if IsValid(state.platform) then
+                state.platform:Remove()
+                state.platform = nil
+                ply:ChatPrint("[MORN] Платформа удалена")
+                return
+            end
+
+            local pos = ply:GetPos() + Vector(0,0,10)
+            local ang = ply:GetAngles()
+            ang:RotateAroundAxis(ang:Up(), 0)
+
+            local plat = ents.Create("prop_physics")
+            plat:SetModel("models/props_junk/wood_crate01a.mdl") -- любая модель
+            plat:SetPos(pos)
+            plat:SetAngles(ang)
+            plat:Spawn()
+            plat:SetCollisionGroup(COLLISION_GROUP_WORLD)
+            -- Делаем невесомой и двигаем вверх
+            plat:SetMoveType(MOVETYPE_VPHYSICS)
+            plat:GetPhysicsObject():EnableMotion(true)
+            plat:GetPhysicsObject():SetVelocity(Vector(0,0,300)) -- поднимаем
+
+            -- Чтобы платформа продолжала подниматься, добавим думающую функцию
+            local function thinkPlatform()
+                if not IsValid(plat) then return end
+                local vel = plat:GetPhysicsObject():GetVelocity()
+                if vel.z < 100 then
+                    plat:GetPhysicsObject():SetVelocity(Vector(0,0,300))
+                end
+                timer.Simple(0.1, thinkPlatform)
+            end
+            timer.Simple(0.1, thinkPlatform)
+
+            state.platform = plat
+            ply:ChatPrint("[MORN] Платформа создана (поднимается)")
+
+        elseif cmd == "tp_player" then
+            -- Телепорт к игроку (выполняется на сервере)
+            local targetName = net.ReadString()
+            local target = nil
+            for _, v in ipairs(player.GetAll()) do
+                if IsValid(v) and v:GetName() == targetName then
+                    target = v
+                    break
+                end
+            end
+            if IsValid(target) and IsValid(ply) then
+                ply:SetPos(target:GetPos() + Vector(0,0,40))
+                ply:ChatPrint("[MORN] Телепорт к " .. target:GetName())
+            else
+                ply:ChatPrint("[MORN] Игрок не найден")
+            end
+        end
+    end)
+
+    -- Очистка состояний при отключении
+    hook.Add("PlayerDisconnected", "Morn_CleanStates", function(ply)
+        if playerStates[ply] then
+            if IsValid(playerStates[ply].platform) then
+                playerStates[ply].platform:Remove()
+            end
+            playerStates[ply] = nil
+        end
+    end)
+
+    -- Команда для сброса всех эффектов (консольная)
+    concommand.Add("morn_reset", function(ply)
+        if not IsValid(ply) then return end
+        local state = getState(ply)
+        ply:SetJumpPower(160)
+        ply:SetWalkSpeed(200)
+        ply:SetRunSpeed(400)
+        ply:GodDisable()
+        if IsValid(state.platform) then state.platform:Remove() end
+        playerStates[ply] = nil
+        ply:ChatPrint("[MORN] Все эффекты сброшены")
+    end)
+
+    -- ========== КОНЕЦ СЕРВЕРНОЙ ЧАСТИ ==========
+end
+
+if CLIENT then
+    -- ========== КЛИЕНТСКАЯ ЧАСТЬ ==========
+
+    -- Переменные состояния меню
+    local mainMenu = nil
+    local subMenu = nil
+    local isDragging = false
+    local dragX, dragY = 0, 0
+
+    -- Функция отправки команды на сервер
+    local function SendCommand(cmd, ...)
+        net.Start("Morn_Menu_Command")
+        net.WriteString(cmd)
+        if cmd == "tp_player" then
+            local name = ...
+            net.WriteString(name)
+        else
+            net.WriteFloat(0) -- заглушка
+        end
+        net.SendToServer()
+    end
+
+    -- Круглое главное меню
+    local function CreateMainMenu()
+        if IsValid(mainMenu) then mainMenu:Remove() end
+
+        local frame = vgui.Create("DFrame")
+        frame:SetSize(80, 80)
+        frame:SetTitle("")
+        frame:ShowCloseButton(false)
+        frame:SetDraggable(true)
+        frame:SetMouseInputEnabled(true)
+        frame:SetKeyboardInputEnabled(false)
+        frame:SetVisible(true)
+
+        -- Устанавливаем форму круга (переопределяем Paint)
+        function frame:Paint(w, h)
+            -- Рисуем круг с градиентом
+            surface.SetDrawColor(30, 30, 40, 220)
+            surface.DrawCircle(w/2, h/2, w/2, 24)
+            -- Обводка
+            surface.SetDrawColor(0, 180, 255, 200)
+            surface.DrawCircleOutline(w/2, h/2, w/2, 3)
+
+            -- Текст внутри
+            draw.SimpleText("MORN", "DermaDefault", w/2, h/2 - 8, Color(0, 180, 255), TEXT_ALIGN_CENTER)
+            draw.SimpleText("⌘", "DermaDefaultBold", w/2, h/2 + 12, Color(255,255,255,200), TEXT_ALIGN_CENTER)
+        end
+
+        -- Обработка клика по кругу (только внутри)
+        function frame:OnMousePressed(mcode)
+            local x, y = self:GetCursorPos()
+            local cx, cy = self:GetSize()/2, self:GetSize()/2
+            if (x - cx)^2 + (y - cy)^2 <= (cx)^2 then
+                -- Открываем подменю
+                if IsValid(subMenu) then subMenu:Remove() end
+                CreateSubMenu()
+            end
+        end
+
+        -- Перетаскивание (стандартное DFrame)
+        frame:MakePopup()
+
+        mainMenu = frame
+        -- Позиционируем в центре экрана
+        mainMenu:Center()
+    end
+
+    -- Прямоугольное подменю
+    local function CreateSubMenu()
+        if IsValid(subMenu) then subMenu:Remove() end
+
+        local frame = vgui.Create("DFrame")
+        frame:SetSize(220, 260)
+        frame:SetTitle("")
+        frame:ShowCloseButton(false)
+        frame:SetDraggable(false)
+        frame:SetMouseInputEnabled(true)
+        frame:SetKeyboardInputEnabled(false)
+        frame:SetVisible(true)
+
+        -- Прямоугольник с закруглениями
+        function frame:Paint(w, h)
+            draw.RoundedBox(8, 0, 0, w, h, Color(20, 25, 35, 240))
+            draw.RoundedBox(8, 1, 1, w-2, h-2, Color(45, 55, 75, 200))
+        end
+
+        -- Кнопка-крестик для закрытия (возврат к круглому)
+        local closeBtn = vgui.Create("DButton", frame)
+        closeBtn:SetSize(24, 24)
+        closeBtn:SetPos(frame:GetWide() - 28, 4)
+        closeBtn:SetText("✕")
+        closeBtn:SetFont("DermaDefaultBold")
+        closeBtn:SetColor(Color(255,255,255))
+        closeBtn:SetTextColor(Color(255,255,255))
+        function closeBtn:Paint(w, h)
+            draw.RoundedBox(4, 0, 0, w, h, Color(180, 30, 30, 200))
+        end
+        closeBtn.DoClick = function()
+            if IsValid(subMenu) then subMenu:Remove() end
+        end
+
+        -- Панель с кнопками (вертикальный список)
+        local panel = vgui.Create("DPanel", frame)
+        panel:SetPos(10, 40)
+        panel:SetSize(frame:GetWide() - 20, frame:GetTall() - 60)
+        function panel:Paint() end
+
+        local yPos = 8
+        local btnW = panel:GetWide() - 16
+
+        -- Вспомогательная функция создания кнопки
+        local function AddButton(text, cmd, ...)
+            local btn = vgui.Create("DButton", panel)
+            btn:SetSize(btnW, 28)
+            btn:SetPos(8, yPos)
+            btn:SetText(text)
+            btn:SetFont("DermaDefault")
+            btn:SetTextColor(Color(255,255,255))
+            btn:SetColor(Color(30, 40, 60, 220))
+            function btn:Paint(w, h)
+                draw.RoundedBox(4, 0, 0, w, h, Color(50, 70, 110, 200))
+                draw.RoundedBox(4, 1, 1, w-2, h-2, Color(70, 90, 140, 220))
+            end
+            btn.DoClick = function()
+                if cmd == "tp_player" then
+                    -- Открыть меню выбора игрока
+                    CreatePlayerListMenu()
+                    return
+                end
+                SendCommand(cmd)
+                if cmd == "inf_jump" or cmd == "jump_b" or cmd == "speed" or cmd == "god" or cmd == "platform" then
+                    -- Для переключаемых функций можно подсветить
+                end
+                -- Закрываем подменю после нажатия (опционально)
+                if IsValid(subMenu) then subMenu:Remove() end
+            end
+            yPos = yPos + 34
+        end
+
+        AddButton("INF JUMP", "inf_jump")
+        AddButton("JUMP B", "jump_b")
+        AddButton("TP PLAYER", "tp_player")
+        AddButton("PLAT", "platform")
+        AddButton("SPEED", "speed")
+        AddButton("GOD", "god")
+
+        -- Кнопка сброса (дополнительно)
+        local resetBtn = vgui.Create("DButton", panel)
+        resetBtn:SetSize(btnW, 28)
+        resetBtn:SetPos(8, yPos)
+        resetBtn:SetText("СБРОСИТЬ ВСЁ")
+        resetBtn:SetFont("DermaDefault")
+        resetBtn:SetTextColor(Color(255,200,200))
+        function resetBtn:Paint(w, h)
+            draw.RoundedBox(4, 0, 0, w, h, Color(100, 30, 30, 200))
+        end
+        resetBtn.DoClick = function()
+            SendCommand("reset_jump")
+            SendCommand("reset_speed")
+            -- Отключаем GOD через серверную команду отдельно (можно отдельно)
+            net.Start("Morn_Menu_Command")
+            net.WriteString("god")  -- чтобы переключить
+            net.WriteFloat(0)
+            net.SendToServer()
+            -- Платформу удаляем отдельно
+            SendCommand("platform")
+            if IsValid(subMenu) then subMenu:Remove() end
+        end
+
+        -- Размещаем подменю справа от главного, на уровне его центра
+        if IsValid(mainMenu) then
+            local mx, my = mainMenu:GetPos()
+            local mw, mh = mainMenu:GetSize()
+            frame:SetPos(mx + mw + 10, my + mh/2 - frame:GetTall()/2)
+        else
+            frame:Center()
+        end
+
+        subMenu = frame
+        subMenu:MakePopup()
+    end
+
+    -- Меню выбора игрока для TP
+    local function CreatePlayerListMenu()
+        if IsValid(playerListMenu) then playerListMenu:Remove() end
+
+        local frame = vgui.Create("DFrame")
+        frame:SetSize(200, 200)
+        frame:SetTitle("Выберите игрока")
+        frame:SetDraggable(true)
+        frame:ShowCloseButton(true)
+        frame:SetVisible(true)
+
+        local list = vgui.Create("DListView", frame)
+        list:SetPos(10, 30)
+        list:SetSize(180, 150)
+        list:AddColumn("Имя")
+
+        for _, ply in ipairs(player.GetAll()) do
+            if IsValid(ply) and ply ~= LocalPlayer() then
+                list:AddLine(ply:GetName())
+            end
+        end
+
+        function list:OnRowSelected(index, line)
+            local name = line:GetValue(1)
+            if name then
+                SendCommand("tp_player", name)
+                if IsValid(frame) then frame:Remove() end
+                if IsValid(subMenu) then subMenu:Remove() end
+            end
+        end
+
+        frame:Center()
+        frame:MakePopup()
+        playerListMenu = frame
+    end
+    local playerListMenu = nil
+
+    -- Команда открытия меню (можно привязать к клавише, но по запросу - при запуске скрипта)
+    -- Создаём меню при загрузке клиента
+    hook.Add("Initialize", "Morn_Menu_Init", function()
+        timer.Simple(1, function()
+            CreateMainMenu()
+        end)
+    end)
+
+    -- Также добавим консольную команду для вызова меню (на случай, если закрыли)
+    concommand.Add("morn_menu", function()
+        if IsValid(mainMenu) then
+            mainMenu:Remove()
+        else
+            CreateMainMenu()
+        end
+    end)
+
+    -- ========== КОНЕЦ КЛИЕНТСКОЙ ЧАСТИ ==========
+end
