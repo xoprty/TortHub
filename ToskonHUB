@@ -1,0 +1,320 @@
+-- MORN :: скрипт для Delta / Kick a Lucky Block
+-- Версия 1.0
+-- Инструкция: вставьте в executor, запустите. GUI появится.
+-- При необходимости измените имена объектов под вашу игру (Slider, KickButton, Money).
+
+local player = game.Players.LocalPlayer
+local userInputService = game:GetService("UserInputService")
+local runService = game:GetService("RunService")
+
+-- Переменные состояния
+local infJumpActive = false
+local flyActive = false
+local autoActive = false
+local moneyActive = false
+
+-- GUI
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "MornUI"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = player.PlayerGui
+
+local mainFrame = Instance.new("Frame")
+mainFrame.Size = UDim2.new(0, 250, 0, 300)
+mainFrame.Position = UDim2.new(0.5, -125, 0.5, -150)
+mainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
+mainFrame.BackgroundTransparency = 0.15
+mainFrame.BorderSizePixel = 0
+mainFrame.Active = true
+mainFrame.Draggable = false
+mainFrame.Parent = screenGui
+
+-- Заголовок для перетаскивания
+local titleBar = Instance.new("Frame")
+titleBar.Size = UDim2.new(1, 0, 0, 30)
+titleBar.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
+titleBar.BackgroundTransparency = 0
+titleBar.BorderSizePixel = 0
+titleBar.Parent = mainFrame
+
+local titleLabel = Instance.new("TextLabel")
+titleLabel.Size = UDim2.new(1, -30, 1, 0)
+titleLabel.BackgroundTransparency = 1
+titleLabel.Text = "MORN Control"
+titleLabel.TextColor3 = Color3.fromRGB(200, 200, 220)
+titleLabel.TextScaled = true
+titleLabel.Font = Enum.Font.SourceSans
+titleLabel.Parent = titleBar
+
+local closeButton = Instance.new("TextButton")
+closeButton.Size = UDim2.new(0, 30, 1, 0)
+closeButton.Position = UDim2.new(1, -30, 0, 0)
+closeButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+closeButton.Text = "X"
+closeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+closeButton.TextScaled = true
+closeButton.Font = Enum.Font.SourceSans
+closeButton.Parent = titleBar
+closeButton.MouseButton1Click:Connect(function()
+    screenGui:Destroy()
+end)
+
+-- Кнопки
+local buttonNames = {"INFJUMP", "FLY", "AUTO", "MONEY"}
+local buttons = {}
+local buttonHeight = 40
+local spacing = 10
+local yPos = 40
+
+for _, name in ipairs(buttonNames) do
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(0.9, 0, 0, buttonHeight)
+    btn.Position = UDim2.new(0.05, 0, 0, yPos)
+    btn.BackgroundColor3 = Color3.fromRGB(60, 60, 80)
+    btn.BackgroundTransparency = 0.2
+    btn.Text = name
+    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    btn.TextScaled = true
+    btn.Font = Enum.Font.SourceSans
+    btn.Parent = mainFrame
+    buttons[name] = btn
+    yPos = yPos + buttonHeight + spacing
+end
+
+-- Перетаскивание
+local dragging = false
+local dragInput, dragStart, startPos
+
+titleBar.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging = true
+        dragStart = input.Position
+        startPos = mainFrame.Position
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                dragging = false
+            end
+        end)
+    end
+end)
+
+titleBar.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement and dragging then
+        local delta = input.Position - dragStart
+        mainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
+end)
+
+-- -------------------------------------------------------------
+-- ФУНКЦИИ
+-- -------------------------------------------------------------
+
+-- Получить персонажа и гуманоида (с обновлением при респе)
+local function getChar()
+    local char = player.Character
+    if not char then return nil, nil end
+    local hum = char:FindFirstChild("Humanoid")
+    if not hum then return nil, nil end
+    return char, hum
+end
+
+-- INFJUMP
+buttons["INFJUMP"].MouseButton1Click:Connect(function()
+    infJumpActive = not infJumpActive
+    local _, hum = getChar()
+    if infJumpActive then
+        if hum then hum.JumpPower = 100 end
+        buttons["INFJUMP"].BackgroundColor3 = Color3.fromRGB(100, 200, 100)
+    else
+        if hum then hum.JumpPower = 50 end
+        buttons["INFJUMP"].BackgroundColor3 = Color3.fromRGB(60, 60, 80)
+    end
+end)
+
+-- FLY
+local flyBodyVelocity, flyBodyGyro = nil, nil
+local flyConnections = {}
+local moveVector = Vector3.new(0, 0, 0)
+local flySpeed = 50
+
+local function stopFly()
+    if flyBodyVelocity then flyBodyVelocity:Destroy() flyBodyVelocity = nil end
+    if flyBodyGyro then flyBodyGyro:Destroy() flyBodyGyro = nil end
+    local _, hum = getChar()
+    if hum then
+        hum.PlatformStand = false
+        hum:SetStateEnabled(Enum.HumanoidStateType.Jumping, true)
+        hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, true)
+    end
+    for _, conn in pairs(flyConnections) do
+        conn:Disconnect()
+    end
+    flyConnections = {}
+    moveVector = Vector3.new(0, 0, 0)
+end
+
+local function startFly()
+    local char, hum = getChar()
+    if not char or not hum then return end
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+
+    -- Отключаем гравитацию
+    hum.PlatformStand = true
+    hum:SetStateEnabled(Enum.HumanoidStateType.Jumping, false)
+    hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
+
+    flyBodyVelocity = Instance.new("BodyVelocity")
+    flyBodyVelocity.MaxForce = Vector3.new(1e5, 1e5, 1e5)
+    flyBodyVelocity.Velocity = Vector3.new(0, 0, 0)
+    flyBodyVelocity.Parent = root
+
+    flyBodyGyro = Instance.new("BodyGyro")
+    flyBodyGyro.MaxTorque = Vector3.new(1e5, 1e5, 1e5)
+    flyBodyGyro.Parent = root
+
+    local function updateFly()
+        if not flyBodyVelocity then return end
+        local cam = workspace.CurrentCamera
+        local forward = cam.CFrame.LookVector
+        local right = cam.CFrame.RightVector
+        local up = cam.CFrame.UpVector
+        local vel = Vector3.new(0, 0, 0)
+        if moveVector.X ~= 0 then vel = vel + right * moveVector.X * flySpeed end
+        if moveVector.Z ~= 0 then vel = vel + forward * (-moveVector.Z) * flySpeed end
+        if moveVector.Y ~= 0 then vel = vel + up * moveVector.Y * flySpeed end
+        flyBodyVelocity.Velocity = vel
+    end
+
+    local function onInputBegan(input, gameProcessed)
+        if gameProcessed then return end
+        if input.KeyCode == Enum.KeyCode.W then moveVector = moveVector + Vector3.new(0,0,-1) updateFly() end
+        if input.KeyCode == Enum.KeyCode.S then moveVector = moveVector + Vector3.new(0,0,1) updateFly() end
+        if input.KeyCode == Enum.KeyCode.A then moveVector = moveVector + Vector3.new(-1,0,0) updateFly() end
+        if input.KeyCode == Enum.KeyCode.D then moveVector = moveVector + Vector3.new(1,0,0) updateFly() end
+        if input.KeyCode == Enum.KeyCode.Space then moveVector = moveVector + Vector3.new(0,1,0) updateFly() end
+        if input.KeyCode == Enum.KeyCode.LeftShift then moveVector = moveVector + Vector3.new(0,-1,0) updateFly() end
+    end
+
+    local function onInputEnded(input, gameProcessed)
+        if gameProcessed then return end
+        if input.KeyCode == Enum.KeyCode.W then moveVector = moveVector - Vector3.new(0,0,-1) updateFly() end
+        if input.KeyCode == Enum.KeyCode.S then moveVector = moveVector - Vector3.new(0,0,1) updateFly() end
+        if input.KeyCode == Enum.KeyCode.A then moveVector = moveVector - Vector3.new(-1,0,0) updateFly() end
+        if input.KeyCode == Enum.KeyCode.D then moveVector = moveVector - Vector3.new(1,0,0) updateFly() end
+        if input.KeyCode == Enum.KeyCode.Space then moveVector = moveVector - Vector3.new(0,1,0) updateFly() end
+        if input.KeyCode == Enum.KeyCode.LeftShift then moveVector = moveVector - Vector3.new(0,-1,0) updateFly() end
+    end
+
+    flyConnections["inputBegan"] = userInputService.InputBegan:Connect(onInputBegan)
+    flyConnections["inputEnded"] = userInputService.InputEnded:Connect(onInputEnded)
+end
+
+buttons["FLY"].MouseButton1Click:Connect(function()
+    flyActive = not flyActive
+    if flyActive then
+        buttons["FLY"].BackgroundColor3 = Color3.fromRGB(100, 200, 100)
+        startFly()
+    else
+        buttons["FLY"].BackgroundColor3 = Color3.fromRGB(60, 60, 80)
+        stopFly()
+    end
+end)
+
+-- AUTO (автоудар по ползунку)
+local autoConnection = nil
+local function findSlider()
+    -- Ищем объект ползунка в PlayerGui (можно адаптировать)
+    for _, gui in pairs(player.PlayerGui:GetChildren()) do
+        if gui:IsA("ScreenGui") then
+            for _, child in pairs(gui:GetDescendants()) do
+                if child.Name:lower():find("slider") or child.Name:lower():find("kick") then
+                    return child
+                end
+            end
+        end
+    end
+    return nil
+end
+
+local function findHitButton()
+    for _, gui in pairs(player.PlayerGui:GetChildren()) do
+        if gui:IsA("ScreenGui") then
+            for _, child in pairs(gui:GetDescendants()) do
+                if child:IsA("TextButton") and (child.Name:lower():find("kick") or child.Name:lower():find("hit")) then
+                    return child
+                end
+            end
+        end
+    end
+    return nil
+end
+
+buttons["AUTO"].MouseButton1Click:Connect(function()
+    autoActive = not autoActive
+    if autoActive then
+        buttons["AUTO"].BackgroundColor3 = Color3.fromRGB(100, 200, 100)
+        autoConnection = runService.Heartbeat:Connect(function()
+            local slider = findSlider()
+            local hitBtn = findHitButton()
+            if slider and hitBtn then
+                -- Предполагаем, что ползунок — ImageLabel с Position.Y.Scale от 0 до 1
+                -- Пик — когда Y.Scale близок к 0 (верх)
+                if slider:IsA("ImageLabel") and slider.Position.Y.Scale < 0.05 then
+                    hitBtn:Click()
+                end
+            end
+        end)
+    else
+        buttons["AUTO"].BackgroundColor3 = Color3.fromRGB(60, 60, 80)
+        if autoConnection then autoConnection:Disconnect() autoConnection = nil end
+    end
+end)
+
+-- MONEY (автосбор)
+local moneyConnection = nil
+buttons["MONEY"].MouseButton1Click:Connect(function()
+    moneyActive = not moneyActive
+    if moneyActive then
+        buttons["MONEY"].BackgroundColor3 = Color3.fromRGB(100, 200, 100)
+        moneyConnection = runService.Heartbeat:Connect(function()
+            for _, obj in pairs(workspace:GetDescendants()) do
+                if obj:IsA("BasePart") and (obj.Name:lower():find("money") or obj.Name:lower():find("coin") or obj.Name:lower():find("brainrot")) then
+                    -- Попытка собрать через ClickDetector
+                    local detector = obj:FindFirstChild("ClickDetector")
+                    if detector then
+                        detector:FireClick()
+                    else
+                        -- Или телепортируем к игроку (простой способ)
+                        local char = player.Character
+                        if char and char:FindFirstChild("HumanoidRootPart") then
+                            obj.Position = char.HumanoidRootPart.Position + Vector3.new(0, 2, 0)
+                        end
+                    end
+                end
+            end
+        end)
+    else
+        buttons["MONEY"].BackgroundColor3 = Color3.fromRGB(60, 60, 80)
+        if moneyConnection then moneyConnection:Disconnect() moneyConnection = nil end
+    end
+end)
+
+-- Сброс состояний при смерти персонажа
+player.CharacterAdded:Connect(function()
+    -- Сброс INFJUMP
+    if infJumpActive then
+        local _, hum = getChar()
+        if hum then hum.JumpPower = 100 end
+    end
+    -- Сброс FLY (автоматически отключается, так как BodyVelocity пропадает)
+    if flyActive then
+        flyActive = false
+        buttons["FLY"].BackgroundColor3 = Color3.fromRGB(60, 60, 80)
+        stopFly()
+    end
+    -- AUTO и MONEY остаются активными, но они не зависят от персонажа
+end)
+
+-- Инициализация
+print("MORN :: скрипт загружен. Используйте GUI.")
