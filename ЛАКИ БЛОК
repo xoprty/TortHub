@@ -1,0 +1,279 @@
+-- MORN :: скрипт для Delta / Kick a Lucky Block
+-- Версия 2.0 (только INFJUMP + FLY SPEED)
+-- Инструкция: вставьте в executor, запустите. GUI появится.
+
+local player = game.Players.LocalPlayer
+local userInputService = game:GetService("UserInputService")
+local runService = game:GetService("RunService")
+
+-- Переменные состояния
+local infJumpActive = false
+local flyActive = false
+local flySpeed = 50
+local moveVector = Vector3.new(0, 0, 0)
+local flyBodyVelocity = nil
+local flyBodyGyro = nil
+local flyConnections = {}
+
+-- GUI
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "MornUI"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = player.PlayerGui
+
+local mainFrame = Instance.new("Frame")
+mainFrame.Size = UDim2.new(0, 280, 0, 200)
+mainFrame.Position = UDim2.new(0.5, -140, 0.5, -100)
+mainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
+mainFrame.BackgroundTransparency = 0.15
+mainFrame.BorderSizePixel = 0
+mainFrame.Active = true
+mainFrame.Draggable = false
+mainFrame.Parent = screenGui
+
+-- Заголовок для перетаскивания
+local titleBar = Instance.new("Frame")
+titleBar.Size = UDim2.new(1, 0, 0, 30)
+titleBar.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
+titleBar.BackgroundTransparency = 0
+titleBar.BorderSizePixel = 0
+titleBar.Parent = mainFrame
+
+local titleLabel = Instance.new("TextLabel")
+titleLabel.Size = UDim2.new(1, -30, 1, 0)
+titleLabel.BackgroundTransparency = 1
+titleLabel.Text = "MORN Control"
+titleLabel.TextColor3 = Color3.fromRGB(200, 200, 220)
+titleLabel.TextScaled = true
+titleLabel.Font = Enum.Font.SourceSans
+titleLabel.Parent = titleBar
+
+local closeButton = Instance.new("TextButton")
+closeButton.Size = UDim2.new(0, 30, 1, 0)
+closeButton.Position = UDim2.new(1, -30, 0, 0)
+closeButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+closeButton.Text = "X"
+closeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+closeButton.TextScaled = true
+closeButton.Font = Enum.Font.SourceSans
+closeButton.Parent = titleBar
+closeButton.MouseButton1Click:Connect(function()
+    screenGui:Destroy()
+end)
+
+-- Кнопка INFJUMP
+local infJumpButton = Instance.new("TextButton")
+infJumpButton.Size = UDim2.new(0.9, 0, 0, 40)
+infJumpButton.Position = UDim2.new(0.05, 0, 0, 45)
+infJumpButton.BackgroundColor3 = Color3.fromRGB(60, 60, 80)
+infJumpButton.BackgroundTransparency = 0.2
+infJumpButton.Text = "INFJUMP"
+infJumpButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+infJumpButton.TextScaled = true
+infJumpButton.Font = Enum.Font.SourceSans
+infJumpButton.Parent = mainFrame
+
+-- Кнопка FLY SPEED
+local flyButton = Instance.new("TextButton")
+flyButton.Size = UDim2.new(0.9, 0, 0, 40)
+flyButton.Position = UDim2.new(0.05, 0, 0, 95)
+flyButton.BackgroundColor3 = Color3.fromRGB(60, 60, 80)
+flyButton.BackgroundTransparency = 0.2
+flyButton.Text = "FLY SPEED"
+flyButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+flyButton.TextScaled = true
+flyButton.Font = Enum.Font.SourceSans
+flyButton.Parent = mainFrame
+
+-- Поле для ввода скорости
+local speedBox = Instance.new("TextBox")
+speedBox.Size = UDim2.new(0.4, 0, 0, 25)
+speedBox.Position = UDim2.new(0.55, 0, 0, 140)
+speedBox.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+speedBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+speedBox.Text = "50"
+speedBox.TextScaled = true
+speedBox.Font = Enum.Font.SourceSans
+speedBox.PlaceholderText = "15-500"
+speedBox.Parent = mainFrame
+
+-- Подпись
+local speedLabel = Instance.new("TextLabel")
+speedLabel.Size = UDim2.new(0.35, 0, 0, 25)
+speedLabel.Position = UDim2.new(0.05, 0, 0, 140)
+speedLabel.BackgroundTransparency = 1
+speedLabel.Text = "Speed:"
+speedLabel.TextColor3 = Color3.fromRGB(200, 200, 220)
+speedLabel.TextScaled = true
+speedLabel.Font = Enum.Font.SourceSans
+speedLabel.Parent = mainFrame
+
+-- Перетаскивание
+local dragging = false
+local dragInput, dragStart, startPos
+
+titleBar.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging = true
+        dragStart = input.Position
+        startPos = mainFrame.Position
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                dragging = false
+            end
+        end)
+    end
+end)
+
+titleBar.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement and dragging then
+        local delta = input.Position - dragStart
+        mainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
+end)
+
+-- -------------------------------------------------------------
+-- ФУНКЦИИ
+-- -------------------------------------------------------------
+
+-- Получить персонажа и гуманоида
+local function getChar()
+    local char = player.Character
+    if not char then return nil, nil end
+    local hum = char:FindFirstChild("Humanoid")
+    if not hum then return nil, nil end
+    return char, hum
+end
+
+-- Обновление скорости полета
+local function updateFlySpeed()
+    local num = tonumber(speedBox.Text)
+    if num and num >= 15 and num <= 500 then
+        flySpeed = num
+    else
+        speedBox.Text = tostring(flySpeed)
+    end
+end
+
+speedBox.FocusLost:Connect(function()
+    updateFlySpeed()
+end)
+
+-- INFJUMP
+infJumpButton.MouseButton1Click:Connect(function()
+    infJumpActive = not infJumpActive
+    local _, hum = getChar()
+    if infJumpActive then
+        if hum then hum.JumpPower = 100 end
+        infJumpButton.BackgroundColor3 = Color3.fromRGB(100, 200, 100)
+    else
+        if hum then hum.JumpPower = 50 end
+        infJumpButton.BackgroundColor3 = Color3.fromRGB(60, 60, 80)
+    end
+end)
+
+-- FLY
+local function stopFly()
+    if flyBodyVelocity then flyBodyVelocity:Destroy() flyBodyVelocity = nil end
+    if flyBodyGyro then flyBodyGyro:Destroy() flyBodyGyro = nil end
+    local _, hum = getChar()
+    if hum then
+        hum.PlatformStand = false
+        hum:SetStateEnabled(Enum.HumanoidStateType.Jumping, true)
+        hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, true)
+    end
+    for _, conn in pairs(flyConnections) do
+        conn:Disconnect()
+    end
+    flyConnections = {}
+    moveVector = Vector3.new(0, 0, 0)
+end
+
+local function startFly()
+    local char, hum = getChar()
+    if not char or not hum then return end
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+
+    hum.PlatformStand = true
+    hum:SetStateEnabled(Enum.HumanoidStateType.Jumping, false)
+    hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
+
+    flyBodyVelocity = Instance.new("BodyVelocity")
+    flyBodyVelocity.MaxForce = Vector3.new(1e5, 1e5, 1e5)
+    flyBodyVelocity.Velocity = Vector3.new(0, 0, 0)
+    flyBodyVelocity.Parent = root
+
+    flyBodyGyro = Instance.new("BodyGyro")
+    flyBodyGyro.MaxTorque = Vector3.new(1e5, 1e5, 1e5)
+    flyBodyGyro.Parent = root
+
+    local function updateFly()
+        if not flyBodyVelocity then return end
+        local cam = workspace.CurrentCamera
+        local forward = cam.CFrame.LookVector
+        local right = cam.CFrame.RightVector
+        local up = cam.CFrame.UpVector
+        local vel = Vector3.new(0, 0, 0)
+        if moveVector.X ~= 0 then vel = vel + right * moveVector.X * flySpeed end
+        if moveVector.Z ~= 0 then vel = vel + forward * (-moveVector.Z) * flySpeed end
+        if moveVector.Y ~= 0 then vel = vel + up * moveVector.Y * flySpeed end
+        flyBodyVelocity.Velocity = vel
+    end
+
+    local function onInputBegan(input, gameProcessed)
+        if gameProcessed then return end
+        if input.KeyCode == Enum.KeyCode.W then moveVector = moveVector + Vector3.new(0,0,-1) updateFly() end
+        if input.KeyCode == Enum.KeyCode.S then moveVector = moveVector + Vector3.new(0,0,1) updateFly() end
+        if input.KeyCode == Enum.KeyCode.A then moveVector = moveVector + Vector3.new(-1,0,0) updateFly() end
+        if input.KeyCode == Enum.KeyCode.D then moveVector = moveVector + Vector3.new(1,0,0) updateFly() end
+        if input.KeyCode == Enum.KeyCode.Space then moveVector = moveVector + Vector3.new(0,1,0) updateFly() end
+        if input.KeyCode == Enum.KeyCode.LeftShift then moveVector = moveVector + Vector3.new(0,-1,0) updateFly() end
+    end
+
+    local function onInputEnded(input, gameProcessed)
+        if gameProcessed then return end
+        if input.KeyCode == Enum.KeyCode.W then moveVector = moveVector - Vector3.new(0,0,-1) updateFly() end
+        if input.KeyCode == Enum.KeyCode.S then moveVector = moveVector - Vector3.new(0,0,1) updateFly() end
+        if input.KeyCode == Enum.KeyCode.A then moveVector = moveVector - Vector3.new(-1,0,0) updateFly() end
+        if input.KeyCode == Enum.KeyCode.D then moveVector = moveVector - Vector3.new(1,0,0) updateFly() end
+        if input.KeyCode == Enum.KeyCode.Space then moveVector = moveVector - Vector3.new(0,1,0) updateFly() end
+        if input.KeyCode == Enum.KeyCode.LeftShift then moveVector = moveVector - Vector3.new(0,-1,0) updateFly() end
+    end
+
+    flyConnections["inputBegan"] = userInputService.InputBegan:Connect(onInputBegan)
+    flyConnections["inputEnded"] = userInputService.InputEnded:Connect(onInputEnded)
+end
+
+flyButton.MouseButton1Click:Connect(function()
+    flyActive = not flyActive
+    if flyActive then
+        flyButton.BackgroundColor3 = Color3.fromRGB(100, 200, 100)
+        startFly()
+    else
+        flyButton.BackgroundColor3 = Color3.fromRGB(60, 60, 80)
+        stopFly()
+    end
+end)
+
+-- Сброс при смерти персонажа
+player.CharacterAdded:Connect(function()
+    if infJumpActive then
+        local _, hum = getChar()
+        if hum then hum.JumpPower = 100 end
+    end
+    if flyActive then
+        flyActive = false
+        flyButton.BackgroundColor3 = Color3.fromRGB(60, 60, 80)
+        stopFly()
+    end
+end)
+
+-- Обновление скорости при изменении TextBox (динамически)
+speedBox:GetPropertyChangedSignal("Text"):Connect(function()
+    if flyActive then
+        updateFlySpeed()
+    end
+end)
+
+print("MORN :: скрипт загружен. INFJUMP + FLY SPEED готовы.")
