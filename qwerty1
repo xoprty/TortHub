@@ -1,0 +1,67 @@
+-- узел: meridian/gui_controller
+-- зависимости: Roblox Luau (применимо к среде разработки)
+-- параметры: UI_SIZE (small), DRAGGABLE (true)
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local player = Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+local humanoid = character:WaitForChild("Humanoid")
+local root = character:WaitForChild("HumanoidRootPart")
+
+-- Создание GUI
+local screen = Instance.new("ScreenGui", game.CoreGui)
+local mainBtn = Instance.new("ImageButton", screen)
+mainBtn.Size = UDim2.new(0, 50, 0, 50)
+mainBtn.Position = UDim2.new(0.5, 0, 0.5, 0)
+mainBtn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+mainBtn.CornerRadius = UDim.new(1, 0)
+mainBtn.Draggable = true
+
+local menu = Instance.new("Frame", screen)
+menu.Visible = false
+menu.Size = UDim2.new(0, 150, 0, 250)
+menu.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+
+local closeBtn = Instance.new("TextButton", menu)
+closeBtn.Text = "X"
+closeBtn.Size = UDim2.new(0, 20, 0, 20)
+closeBtn.Position = UDim2.new(1, -25, 0, 5)
+
+mainBtn.MouseButton1Click:Connect(function() menu.Visible = not menu.Visible end)
+closeBtn.MouseButton1Click:Connect(function() menu.Visible = false end)
+
+-- Функции
+local function setJump(power) humanoid.UseJumpPower = true; humanoid.JumpPower = power end
+local function setSpeed(speed) humanoid.WalkSpeed = speed end
+
+-- Кнопки
+local function createBtn(name, callback)
+    local b = Instance.new("TextButton", menu)
+    b.Text = name; b.Size = UDim2.new(0, 140, 0, 30)
+    b.MouseButton1Click:Connect(callback)
+end
+
+createBtn("INF JUMP", function() setJump(150) end)
+createBtn("JUMP B", function() root.Velocity = root.Velocity + Vector3.new(0, 100, 0) end)
+createBtn("SPEED", function() setSpeed(50) end)
+createBtn("GOD", function() humanoid.MaxHealth = math.huge; humanoid.Health = math.huge end)
+
+createBtn("PLAT", function()
+    local p = Instance.new("Part", workspace)
+    p.Size = Vector3.new(5, 1, 5); p.Anchored = true
+    spawn(function()
+        while p do p.Position = root.Position - Vector3.new(0, 4, 0); p.Position += Vector3.new(0, 0.5, 0); task.wait() end
+    end)
+end)
+
+createBtn("TP PLAYER", function()
+    -- Дополнительное окно для списка игроков
+    local tpMenu = Instance.new("Frame", menu)
+    tpMenu.Size = UDim2.new(1, 0, 1, 0)
+    for _, p in pairs(Players:GetPlayers()) do
+        if p ~= player then
+            createBtn(p.Name, function() root.CFrame = p.Character.HumanoidRootPart.CFrame end)
+        end
+    end
+end)
